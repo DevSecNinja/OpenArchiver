@@ -29,6 +29,33 @@ If you have an idea for an enhancement, please open an issue to discuss it. This
 6.  **Update the documentation** if your changes require it.
 7.  **Submit a pull request** to the `main` branch of the main repository. Please provide a clear description of the problem and solution. Include the relevant issue number if applicable.
 
+## Dependency regression checks
+
+Use Node.js 22 or newer and the pnpm version pinned in `package.json`:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm build:oss
+pnpm --filter @open-archiver/backend --filter @open-archiver/frontend test
+pnpm --filter @open-archiver/frontend check
+pnpm lint
+```
+
+The dependency tests use Node's built-in test runner. They cover mail parsing and attachment
+serialization, bounded recipient-array copying, streamed request body limits, and runtime API
+compatibility. They do not start Open Archiver, run migrations, or need external services; the HTTP
+compatibility test binds only an ephemeral loopback port.
+
+When changing dependencies, regenerate `pnpm-lock.yaml` with the pinned pnpm and rebuild the frontend:
+SvelteKit's adapter-node request handling is included in its compiled output. Check transitive copies,
+not just direct package versions. Nodemailer 10 provides its own declarations, so it does not need
+`@types/nodemailer`. Mailparser and Nodemailer require Node.js 20 or newer, within this project's
+existing Node.js 22 minimum.
+
+`pnpm audit --prod` reports dependency advisories, not confirmed application exploits or the contents
+of a deployed image. Native installer dependencies and build tools can still appear in that report;
+validate the separately built image as well.
+
 ## Contributor License Agreement
 
 By submitting a pull request to this repository, you agree to the terms and conditions of our [Contributor License Agreement](./.github/CLA.md)
