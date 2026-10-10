@@ -5,6 +5,7 @@
 	"license": "SEE LICENSE IN LICENSE file",
 	"scripts": {
 		"build:oss": "pnpm --filter \"./packages/*\" --filter \"!./packages/enterprise\" --filter \"./apps/open-archiver\" build",
+		"test:oss": "cd packages/backend/test && node --test",
 		"build:enterprise": "cross-env VITE_ENTERPRISE_MODE=true pnpm build",
 		"start:oss": "dotenv -- concurrently \"node apps/open-archiver/dist/index.js\" \"pnpm --filter @open-archiver/frontend start\"",
 		"start:enterprise": "dotenv -- concurrently \"node apps/open-archiver-enterprise/dist/index.js\" \"pnpm --filter @open-archiver/frontend start\"",

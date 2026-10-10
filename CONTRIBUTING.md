@@ -36,7 +36,7 @@ Actions. It enables fork processing, leaves automerge disabled, limits concurren
 requires dashboard approval for major updates. HTTP/authorization, mail/upload, and SvelteKit
 non-major updates are separate groups; do not combine unrelated fixes into one maintenance PR.
 
-Validate configuration changes with:
+Validate configuration changes with Node.js 24 (required by this Renovate CLI version):
 
 ```sh
 npx --yes --package=renovate@44.149.2 renovate-config-validator --strict renovate.json
@@ -132,9 +132,71 @@ Record the resolved versions from the rebuilt installation alongside any audit/s
 the dependency PR. A passing fixture or dependency inventory does not establish that the full
 artifact is free of vulnerabilities.
 
+## OSS validation in this fork
+
+From a clean checkout, use Node.js 22 and the pnpm release declared in the root
+`package.json` `packageManager` field. Do not substitute a different pnpm release or regenerate
+the lockfile just to get validation to pass. Run these commands from the repository root on Linux
+(or in WSL on Windows, since the existing build uses POSIX commands):
+
+```sh
+pnpm install --frozen-lockfile
+pnpm build:oss
+pnpm test:oss
+```
+
+`.github/workflows/validation.yml` runs these commands for pull requests, pushes to `main`, and
+manual dispatches. A separate Node.js 24 job runs the strict Renovate validator documented above.
+Failures stop their job; no build or test failures are ignored. The workflow uses read-only repository
+permissions, SHA-pinned actions, and checkouts without persisted credentials. It does not use production
+secrets, publish images, or deploy documentation. Repository administrators can require the
+`OSS build and regressions` and `Renovate configuration` checks in branch protection; adding the workflow
+alone does not configure required checks.
+
+The OSS build runs TypeScript compilation for the shared types, backend, and OSS entry point, plus
+the frontend's Vite/Node-adapter build. `pnpm test:oss` uses Node's built-in test runner against the
+real compiled `createAbilityFor` function and installed CASL dependency; build first, including after
+source changes. The runner discovers both CommonJS (`*.test.cjs`) and ESM (`*.test.mjs`) tests under
+`packages/backend/test`. Its synthetic policy/subject fixtures cover default denial, mailbox and source
+boundaries, action isolation, explicit denial, no implicit ingestion-to-archive grants, and administrator
+wildcards. No real mailboxes, mail contents, attachments, or cloud credentials are used.
+The same runner also discovers the focused HTTP dependency checks described above.
+
+### Coverage limits and follow-up work
+
+This is a build and policy/HTTP regression gate, not end-to-end archive validation. It does not establish
+authentication/session behavior, policy interpolation or database query filtering, ingestion, MIME or
+attachment parsing, indexing/search, export, deletion, or matching database/archive restoration.
+The policy tests import the compiled policy module and the HTTP checks use synthetic loopback fixtures,
+not the application entry point.
+
+Only `esbuild` is approved in `pnpm-workspace.yaml` `allowBuilds`, and `sqlite3` is explicitly denied,
+so a normal locked installation does not build the SQLite native binding. A passing source build does not prove that
+SQLite or the production application can start. Native-module checks, image builds, non-root startup,
+migrations, synthetic ingestion/search, and restore integration coverage belong to
+[issue #2](https://github.com/DevSecNinja/OpenArchiver/issues/2). Do not bypass native checks or treat
+this workflow as evidence that the runtime gap is fixed.
+
+The frontend build is not a standalone `svelte-check` pass; full frontend type and behavior validation
+belongs to [issue #6](https://github.com/DevSecNinja/OpenArchiver/issues/6). This baseline also does not
+run repository-wide Prettier checks because inherited formatting warnings would obscure the focused
+gate. Check formatting only for files you change; do not mass-format unrelated source.
+
+The inherited Docker publication, release tagging, Pages deployment (including its upstream CNAME),
+and CLA jobs are restricted to the non-fork `LogicLabs-OU/OpenArchiver` repository. Their existing
+upstream targets remain unchanged. They are skipped in this fork, even if it is later detached from
+its fork network, and no fork publication is configured. Elevated repository permissions stay inside
+the guarded upstream jobs that need them.
+
 ## Contributor License Agreement
 
 By submitting a pull request to this repository, you agree to the terms and conditions of our [Contributor License Agreement](./.github/CLA.md)
+
+The statement above is inherited and references `CLA.md`, while the inherited upstream CLA workflow
+references `CLA-v2.md`. Clarification of the fork's contributor policy and this reference ambiguity is
+pending. All license and CLA texts remain unchanged. Skipping the upstream-only CLA job prevents
+failures caused by unavailable upstream credentials; it does not resolve the policy ambiguity or
+establish legal compliance.
 
 ## Code of Conduct
 
@@ -157,10 +219,15 @@ This project and everyone participating in it is governed by the [Open Archiver 
 
 ### Formatting
 
-We use Prettier for code formatting. Before you commit new code, it is necessary to check code format by running this command from the root folder:
+We use Prettier for code formatting. In this fork, check the files you change from the repository root,
+replacing the example path with the changed file paths:
 
-`pnpm run lint`
+```sh
+pnpm exec prettier --check path/to/changed-file
+```
 
-If there are any format issues, you can use the following command to fix them
+To fix their formatting, use the same explicit paths:
 
-`pnpm run format`
+```sh
+pnpm exec prettier --write path/to/changed-file
+```

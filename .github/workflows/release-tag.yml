@@ -9,12 +9,15 @@ permissions:
 
 jobs:
     tag-release-image:
+        if: ${{ github.repository == 'LogicLabs-OU/OpenArchiver' && !github.event.repository.fork }}
         runs-on: ubuntu-latest
         env:
             IMAGE: logiclabshq/open-archiver
         steps:
             - name: Checkout released tag
               uses: actions/checkout@v4
+              with:
+                  persist-credentials: false
 
             - name: Login to Docker Hub
               uses: docker/login-action@v3
