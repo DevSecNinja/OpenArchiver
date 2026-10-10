@@ -57,6 +57,50 @@ Dependency PRs must include source rebuilds and relevant regression results, not
 changes or a package-manager audit. Keep upstream synchronization manual and reviewed, preserving
 fork patches. Do not use Renovate to automatically merge upstream commits.
 
+### Pinned toolchain and tarball integrity
+
+Use Node.js 22 and the pnpm version pinned in `package.json` (12.10.1). The Docker build and
+documentation workflow read that pin rather than selecting another version. Enable the Corepack
+pnpm shim so nested workspace scripts use the same version. From a clean checkout:
+
+```sh
+corepack enable pnpm
+pnpm install --frozen-lockfile
+pnpm build:oss
+```
+
+`pnpm-workspace.yaml` allows only the previously approved `esbuild` dependency scripts. The other
+listed builds remain denied, including `sqlite3`; this toolchain change does not repair native SQLite
+runtime support. `verifyDepsBeforeRun: false` preserves explicit installation: `pnpm run` and
+`pnpm exec` must not install dependencies implicitly.
+
+`minimumReleaseAgeStrict: true` makes pnpm reject unattended updates when no requested version meets
+its release-age policy, rather than automatically recording exceptions. Interactive exceptions require
+explicit approval. The default minimum release age is unchanged (one day); choose an eligible release
+or wait instead of adding an exclusion.
+
+The backend uses the official SheetJS 0.20.3 tarball at
+`https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz`. Its SHA-512 integrity, verified against a current
+official download on 2026-10-10, is:
+
+```text
+sha512-oLDq3jw7AcLqKWH2AhCpVTZl8mf6X2YReP+Neh0SJUzV/BdZYjth94tG5toiMB1PPrYtxOCfaoUCkvtuH+3AJA==
+```
+
+This verifies the downloaded artifact, not historical byte-for-byte equivalence: no trusted checksum
+was recorded in the old lockfile. An unchanged URL or version is not proof that past bytes match.
+For this missing-integrity repair, pnpm removed and re-added only that identical URL with
+`--lockfile-only` (and `--ignore-scripts` on add); the generated checksum was independently compared
+with the download. Do not hand-edit generated hashes, delete the entire lockfile, or disable
+integrity checks.
+
+pnpm 10.34.6 can discard tarball integrity on update. See
+[pnpm/pnpm#14351](https://github.com/pnpm/pnpm/issues/14351) and
+[pnpm/pnpm#12185](https://github.com/pnpm/pnpm/issues/12185) for the upstream fix verification.
+When changing this toolchain, run `pnpm --filter @open-archiver/backend update xlsx --lockfile-only`
+twice, checking that the recorded checksum survives each operation and that no unrelated dependency
+resolutions or integrity values change, then repeat the frozen install and OSS source build.
+
 ## Contributor License Agreement
 
 By submitting a pull request to this repository, you agree to the terms and conditions of our [Contributor License Agreement](./.github/CLA.md)

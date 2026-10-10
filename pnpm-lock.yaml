@@ -1,3 +1,161 @@
+---
+lockfileVersion: '9.0'
+
+importers:
+
+  .:
+    configDependencies: {}
+    packageManagerDependencies:
+      pnpm:
+        specifier: 12.10.1
+        version: 12.10.1
+
+packages:
+
+  '@pnpm/exe.android-arm64@12.10.1':
+    resolution: {integrity: sha512-CVTlHPwNvadQCJD9bGSMzWIhFX8QpjtqC2c27dhdnn/9iKzEjZ3qL62o3gHpKbIuo6qn4WxTKRoaokgNdReBig==}
+    cpu: [arm64]
+    os: [android]
+
+  '@pnpm/exe.android-x64@12.10.1':
+    resolution: {integrity: sha512-NFiYLIaodY7da0XIebwcU3JoP7IK/lzF7zgKSSP+9H+QcFnQ1GDfBkuBKCYJzZ+Xu0WH54neIPLBBCaOjaaauA==}
+    cpu: [x64]
+    os: [android]
+
+  '@pnpm/exe.darwin-arm64@12.10.1':
+    resolution: {integrity: sha512-0O8tdQ8ijlPJudXspLMTcitMkdBEz6uUflazL5uQE0WMs85oQIp0U+5hfEktMFB64QqEhjqlvvujTwbzdr9oMg==}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@pnpm/exe.darwin-x64@12.10.1':
+    resolution: {integrity: sha512-ud+1/uZOKEo8P/AsPynOJc/LNwfI0j6WwCElibj71rU9l4nIBnsSn+wWTIPZPkZ4BBSH5+82azSnAARMyJ1lNA==}
+    cpu: [x64]
+    os: [darwin]
+
+  '@pnpm/exe.freebsd-x64@12.10.1':
+    resolution: {integrity: sha512-mj9PE5rf8uAfQQ2K66HSATMSut+lNiB4eSqFd5+azFVCMnxNSy/32xpZQJT21PhnN3Y4qbK+iKHe5nWAxSuRhw==}
+    cpu: [x64]
+    os: [freebsd]
+
+  '@pnpm/exe.linux-arm64-musl@12.10.1':
+    resolution: {integrity: sha512-xba+00wZJ8Um6rBJJjWl88uJj0tydB8dtomvjlCLvi0uL32vpa9CRP8Vv26FIXvbiZ1bo2RCzYt/eChxJVV52w==}
+    cpu: [arm64]
+    os: [linux]
+    libc: [musl]
+
+  '@pnpm/exe.linux-arm64@12.10.1':
+    resolution: {integrity: sha512-oBdMp69ScC9UnniG4qZAQVr2fBDSXjm4yk/72vkEVyrlwS23yMxcRQl7Qdo3sgXPAygY6TWnPRKm4rXzjoyW7w==}
+    cpu: [arm64]
+    os: [linux]
+    libc: [glibc]
+
+  '@pnpm/exe.linux-ppc64@12.10.1':
+    resolution: {integrity: sha512-Yyb3wu09h3c7mLme270uHFiVaAIUHC411Ru9LIU2BKUIstrGlXa9OqqVWoXaRgYRdFdOFknkwG7GNn6ygwLbnw==}
+    cpu: [ppc64]
+    os: [linux]
+    libc: [glibc]
+
+  '@pnpm/exe.linux-riscv64@12.10.1':
+    resolution: {integrity: sha512-PdkeUFFkybknnGkWP0H22eMpIiS4OZXL5BcQzF4lh+vmrW3IaC2HOkbANKgot/PKO0Kl77pzA/6PKFxgbgfXIQ==}
+    cpu: [riscv64]
+    os: [linux]
+    libc: [glibc]
+
+  '@pnpm/exe.linux-s390x@12.10.1':
+    resolution: {integrity: sha512-1okKuHKJwJPAbofDxfhZWAUxEWtee4ZSf7Pah8kcvocaJkf2WxFJ5KVTiNIvDml5GLidDQsgf7Pcf/WHbCak7Q==}
+    cpu: [s390x]
+    os: [linux]
+    libc: [glibc]
+
+  '@pnpm/exe.linux-x64-musl@12.10.1':
+    resolution: {integrity: sha512-e6IqzVNkPa7srFKJKnY23uWJ+qz0LaRWiTUo/sHfFXRRMRzB5uNOr6qWWip/jqhdGwU91n9J7LrEYZ6e0tRczw==}
+    cpu: [x64]
+    os: [linux]
+    libc: [musl]
+
+  '@pnpm/exe.linux-x64@12.10.1':
+    resolution: {integrity: sha512-ZByV0DRgWzGaDSjT5ddRBASdwz+r/qPMYh7o6RGmPQjtRGNFbSl94xY2DcAM8mqCOZJUUDtAXQ+wpBXcdpKlkg==}
+    cpu: [x64]
+    os: [linux]
+    libc: [glibc]
+
+  '@pnpm/exe.win32-arm64@12.10.1':
+    resolution: {integrity: sha512-I7QZHcjioG7orFeCRUFUHByJ1G0zFPnAlaGGyrUvb6MGkv5oeNwNPl7t+Gp+7zHfnMcgLGJ1a+Wfim0IDw3lOw==}
+    cpu: [arm64]
+    os: [win32]
+
+  '@pnpm/exe.win32-x64@12.10.1':
+    resolution: {integrity: sha512-4WJFdp58EKlCj0zLobrXU0vpszSZIr4X/3y/uNbAQqGW0zE+VdruZB0gFc3L2kzsUzVwTYbaCn+XEhnCYSAlTg==}
+    cpu: [x64]
+    os: [win32]
+
+  pnpm@12.10.1:
+    resolution: {integrity: sha512-ukCjfrGjcNYP6oxM8dNkwTvMzvUY6YrSvO6VT1OdONo3RY5YJho/pV4GUjRQ6g//+fSXsTW+QfLBXBZCusrObA==}
+    engines: {node: '>=18.*'}
+    hasBin: true
+
+snapshots:
+
+  '@pnpm/exe.android-arm64@12.10.1':
+    optional: true
+
+  '@pnpm/exe.android-x64@12.10.1':
+    optional: true
+
+  '@pnpm/exe.darwin-arm64@12.10.1':
+    optional: true
+
+  '@pnpm/exe.darwin-x64@12.10.1':
+    optional: true
+
+  '@pnpm/exe.freebsd-x64@12.10.1':
+    optional: true
+
+  '@pnpm/exe.linux-arm64-musl@12.10.1':
+    optional: true
+
+  '@pnpm/exe.linux-arm64@12.10.1':
+    optional: true
+
+  '@pnpm/exe.linux-ppc64@12.10.1':
+    optional: true
+
+  '@pnpm/exe.linux-riscv64@12.10.1':
+    optional: true
+
+  '@pnpm/exe.linux-s390x@12.10.1':
+    optional: true
+
+  '@pnpm/exe.linux-x64-musl@12.10.1':
+    optional: true
+
+  '@pnpm/exe.linux-x64@12.10.1':
+    optional: true
+
+  '@pnpm/exe.win32-arm64@12.10.1':
+    optional: true
+
+  '@pnpm/exe.win32-x64@12.10.1':
+    optional: true
+
+  pnpm@12.10.1:
+    optionalDependencies:
+      '@pnpm/exe.android-arm64': 12.10.1
+      '@pnpm/exe.android-x64': 12.10.1
+      '@pnpm/exe.darwin-arm64': 12.10.1
+      '@pnpm/exe.darwin-x64': 12.10.1
+      '@pnpm/exe.freebsd-x64': 12.10.1
+      '@pnpm/exe.linux-arm64': 12.10.1
+      '@pnpm/exe.linux-arm64-musl': 12.10.1
+      '@pnpm/exe.linux-ppc64': 12.10.1
+      '@pnpm/exe.linux-riscv64': 12.10.1
+      '@pnpm/exe.linux-s390x': 12.10.1
+      '@pnpm/exe.linux-x64': 12.10.1
+      '@pnpm/exe.linux-x64-musl': 12.10.1
+      '@pnpm/exe.win32-arm64': 12.10.1
+      '@pnpm/exe.win32-x64': 12.10.1
+
+---
 lockfileVersion: '9.0'
 
 settings:
@@ -32,10 +190,10 @@ importers:
         version: 5.8.3
       vitepress:
         specifier: ^1.6.4
-        version: 1.6.4(@algolia/client-search@5.34.1)(@types/node@24.0.13)(axios@1.10.0)(lightningcss@1.30.1)(postcss@8.5.6)(qrcode@1.5.4)(search-insights@2.17.3)(typescript@5.8.3)
+        version: 1.6.4(@algolia/client-search@5.34.1)(@types/node@24.0.13)(axios@1.10.0(debug@4.4.3(supports-color@8.1.1)))(lightningcss@1.30.1)(postcss@8.5.6)(qrcode@1.5.4)(search-insights@2.17.3)(typescript@5.8.3)
       vitepress-openapi:
         specifier: ^0.1.18
-        version: 0.1.18(vitepress@1.6.4(@algolia/client-search@5.34.1)(@types/node@24.0.13)(axios@1.10.0)(lightningcss@1.30.1)(postcss@8.5.6)(qrcode@1.5.4)(search-insights@2.17.3)(typescript@5.8.3))(vue@3.5.18(typescript@5.8.3))
+        version: 0.1.18(vitepress@1.6.4(@algolia/client-search@5.34.1)(@types/node@24.0.13)(axios@1.10.0(debug@4.4.3(supports-color@8.1.1)))(lightningcss@1.30.1)(postcss@8.5.6)(qrcode@1.5.4)(search-insights@2.17.3)(typescript@5.8.3))(vue@3.5.18(typescript@5.8.3))
 
   apps/open-archiver:
     dependencies:
@@ -69,7 +227,7 @@ importers:
         version: 6.7.3
       '@microsoft/microsoft-graph-client':
         specifier: ^3.0.7
-        version: 3.0.7
+        version: 3.0.7(buffer@6.0.3)(stream-browserify@3.0.0)
       '@open-archiver/types':
         specifier: workspace:*
         version: link:../types
@@ -78,13 +236,13 @@ importers:
         version: 7.0.1
       axios:
         specifier: ^1.10.0
-        version: 1.10.0
+        version: 1.10.0(debug@4.4.3(supports-color@8.1.1))
       bcryptjs:
         specifier: ^3.0.2
         version: 3.0.2
       bullmq:
         specifier: ^5.56.3
-        version: 5.56.3
+        version: 5.56.3(supports-color@8.1.1)
       busboy:
         specifier: ^1.6.0
         version: 1.6.0
@@ -105,25 +263,25 @@ importers:
         version: 17.2.0
       drizzle-kit:
         specifier: ^0.31.4
-        version: 0.31.4
+        version: 0.31.4(supports-color@8.1.1)
       drizzle-orm:
         specifier: ^0.44.2
-        version: 0.44.2(pg@8.16.3)(postgres@3.4.7)(sqlite3@5.1.7)
+        version: 0.44.2(pg@8.16.3)(postgres@3.4.7)(sqlite3@5.1.7(bluebird@3.4.7)(supports-color@8.1.1))
       express:
         specifier: ^5.1.0
-        version: 5.1.0
+        version: 5.1.0(supports-color@8.1.1)
       express-rate-limit:
         specifier: ^8.0.1
-        version: 8.0.1(express@5.1.0)
+        version: 8.0.1(express@5.1.0(supports-color@8.1.1))
       express-validator:
         specifier: ^7.2.1
         version: 7.2.1
       google-auth-library:
         specifier: ^10.1.0
-        version: 10.1.0
+        version: 10.1.0(supports-color@8.1.1)
       googleapis:
         specifier: ^152.0.0
-        version: 152.0.0
+        version: 152.0.0(supports-color@8.1.1)
       i18next:
         specifier: ^25.4.2
         version: 25.4.2(typescript@5.8.3)
@@ -138,7 +296,7 @@ importers:
         version: 1.0.191
       ioredis:
         specifier: ^5.10.1
-        version: 5.11.1
+        version: 5.11.1(supports-color@8.1.1)
       jose:
         specifier: ^6.0.11
         version: 6.0.11
@@ -186,7 +344,7 @@ importers:
         version: 0.2.2
       sqlite3:
         specifier: ^5.1.7
-        version: 5.1.7
+        version: 5.1.7(bluebird@3.4.7)(supports-color@8.1.1)
       xlsx:
         specifier: https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz
         version: https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz
@@ -3553,6 +3711,7 @@ packages:
 
   lucide-vue-next@0.577.0:
     resolution: {integrity: sha512-py05bAfv9SHVJqscbiOnjcnLlEmOffA58a+7XhZuFxrs6txe1E8VoR1ngWGTYO+9aVKABAz8l3ee3PqiQN9QPA==}
+    deprecated: Package deprecated. Please use @lucide/vue instead.
     peerDependencies:
       vue: '>=3.0.1'
 
@@ -3930,7 +4089,6 @@ packages:
     resolution: {integrity: sha512-Nkwo9qeCvqVH0ZgYRUfPyj6o4o7StvNIxMFECeiz4y0uMOVyqc5Y9hjsdFVxdYCeiUjjXLQXA8KIz0iJL3HM0w==}
     engines: {node: '>=20.18.0'}
     hasBin: true
-    bundledDependencies: []
 
   peberminta@0.9.0:
     resolution: {integrity: sha512-XIxfHpEuSJbITd1H3EeQwpcZbTLHc+VVr8ANI9t5sit565tsI4/xK3KWTUFE2e6QiangUkh3B0jihzmGnNrRsQ==}
@@ -4940,7 +5098,7 @@ packages:
     resolution: {integrity: sha512-l4Sp/DRseor9wL6EvV2+TuQn63dMkPjZ/sp9XkghTEbV9KlPS1xUsZ3u7/IQO4wxtcFB4bgpQPRcR3QCvezPcQ==}
 
   xlsx@https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz:
-    resolution: {tarball: https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz}
+    resolution: {integrity: sha512-oLDq3jw7AcLqKWH2AhCpVTZl8mf6X2YReP+Neh0SJUzV/BdZYjth94tG5toiMB1PPrYtxOCfaoUCkvtuH+3AJA==, tarball: https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz}
     version: 0.20.3
     engines: {node: '>=0.8'}
     hasBin: true
@@ -6029,10 +6187,13 @@ snapshots:
     dependencies:
       svelte: 5.35.5
 
-  '@microsoft/microsoft-graph-client@3.0.7':
+  '@microsoft/microsoft-graph-client@3.0.7(buffer@6.0.3)(stream-browserify@3.0.0)':
     dependencies:
       '@babel/runtime': 7.27.6
       tslib: 2.8.1
+    optionalDependencies:
+      buffer: 6.0.3
+      stream-browserify: 3.0.0
 
   '@msgpackr-extract/msgpackr-extract-darwin-arm64@3.0.3':
     optional: true
@@ -6982,13 +7143,13 @@ snapshots:
       '@vueuse/shared': 14.2.1(vue@3.5.18(typescript@5.8.3))
       vue: 3.5.18(typescript@5.8.3)
 
-  '@vueuse/integrations@12.8.2(axios@1.10.0)(focus-trap@7.6.5)(qrcode@1.5.4)(typescript@5.8.3)':
+  '@vueuse/integrations@12.8.2(axios@1.10.0(debug@4.4.3(supports-color@8.1.1)))(focus-trap@7.6.5)(qrcode@1.5.4)(typescript@5.8.3)':
     dependencies:
       '@vueuse/core': 12.8.2(typescript@5.8.3)
       '@vueuse/shared': 12.8.2(typescript@5.8.3)
       vue: 3.5.18(typescript@5.8.3)
     optionalDependencies:
-      axios: 1.10.0
+      axios: 1.10.0(debug@4.4.3(supports-color@8.1.1))
       focus-trap: 7.6.5
       qrcode: 1.5.4
     transitivePeerDependencies:
@@ -7028,9 +7189,9 @@ snapshots:
 
   acorn@8.15.0: {}
 
-  agent-base@6.0.2:
+  agent-base@6.0.2(supports-color@8.1.1):
     dependencies:
-      debug: 4.4.1
+      debug: 4.4.1(supports-color@8.1.1)
     transitivePeerDependencies:
       - supports-color
     optional: true
@@ -7130,9 +7291,9 @@ snapshots:
 
   atomic-sleep@1.0.0: {}
 
-  axios@1.10.0:
+  axios@1.10.0(debug@4.4.3(supports-color@8.1.1)):
     dependencies:
-      follow-redirects: 1.15.9
+      follow-redirects: 1.15.9(debug@4.4.3(supports-color@8.1.1))
       form-data: 4.0.3
       proxy-from-env: 1.1.0
     transitivePeerDependencies:
@@ -7182,11 +7343,11 @@ snapshots:
 
   bluebird@3.4.7: {}
 
-  body-parser@2.2.0:
+  body-parser@2.2.0(supports-color@8.1.1):
     dependencies:
       bytes: 3.1.2
       content-type: 1.0.5
-      debug: 4.4.1
+      debug: 4.4.1(supports-color@8.1.1)
       http-errors: 2.0.0
       iconv-lite: 0.6.3
       on-finished: 2.4.1
@@ -7234,10 +7395,10 @@ snapshots:
       base64-js: 1.5.1
       ieee754: 1.2.1
 
-  bullmq@5.56.3:
+  bullmq@5.56.3(supports-color@8.1.1):
     dependencies:
       cron-parser: 4.9.0
-      ioredis: 5.11.1
+      ioredis: 5.11.1(supports-color@8.1.1)
       msgpackr: 1.11.4
       node-abort-controller: 3.1.1
       semver: 7.7.2
@@ -7252,7 +7413,7 @@ snapshots:
 
   bytes@3.1.2: {}
 
-  cacache@15.3.0:
+  cacache@15.3.0(bluebird@3.4.7):
     dependencies:
       '@npmcli/fs': 1.1.1
       '@npmcli/move-file': 1.1.2
@@ -7267,7 +7428,7 @@ snapshots:
       minipass-pipeline: 1.2.4
       mkdirp: 1.0.4
       p-map: 4.0.0
-      promise-inflight: 1.0.1
+      promise-inflight: 1.0.1(bluebird@3.4.7)
       rimraf: 3.0.2
       ssri: 8.0.1
       tar: 6.2.1
@@ -7574,9 +7735,17 @@ snapshots:
     dependencies:
       ms: 2.1.3
 
-  debug@4.4.3:
+  debug@4.4.1(supports-color@8.1.1):
     dependencies:
       ms: 2.1.3
+    optionalDependencies:
+      supports-color: 8.1.1
+
+  debug@4.4.3(supports-color@8.1.1):
+    dependencies:
+      ms: 2.1.3
+    optionalDependencies:
+      supports-color: 8.1.1
 
   decamelize@1.2.0: {}
 
@@ -7656,20 +7825,20 @@ snapshots:
 
   dotenv@17.2.0: {}
 
-  drizzle-kit@0.31.4:
+  drizzle-kit@0.31.4(supports-color@8.1.1):
     dependencies:
       '@drizzle-team/brocli': 0.10.2
       '@esbuild-kit/esm-loader': 2.6.5
       esbuild: 0.25.6
-      esbuild-register: 3.6.0(esbuild@0.25.6)
+      esbuild-register: 3.6.0(esbuild@0.25.6)(supports-color@8.1.1)
     transitivePeerDependencies:
       - supports-color
 
-  drizzle-orm@0.44.2(pg@8.16.3)(postgres@3.4.7)(sqlite3@5.1.7):
+  drizzle-orm@0.44.2(pg@8.16.3)(postgres@3.4.7)(sqlite3@5.1.7(bluebird@3.4.7)(supports-color@8.1.1)):
     optionalDependencies:
       pg: 8.16.3
       postgres: 3.4.7
-      sqlite3: 5.1.7
+      sqlite3: 5.1.7(bluebird@3.4.7)(supports-color@8.1.1)
 
   duck@0.1.12:
     dependencies:
@@ -7740,9 +7909,9 @@ snapshots:
       has-tostringtag: 1.0.2
       hasown: 2.0.2
 
-  esbuild-register@3.6.0(esbuild@0.25.6):
+  esbuild-register@3.6.0(esbuild@0.25.6)(supports-color@8.1.1):
     dependencies:
-      debug: 4.4.1
+      debug: 4.4.1(supports-color@8.1.1)
       esbuild: 0.25.6
     transitivePeerDependencies:
       - supports-color
@@ -7849,9 +8018,9 @@ snapshots:
 
   expand-template@2.0.3: {}
 
-  express-rate-limit@8.0.1(express@5.1.0):
+  express-rate-limit@8.0.1(express@5.1.0(supports-color@8.1.1)):
     dependencies:
-      express: 5.1.0
+      express: 5.1.0(supports-color@8.1.1)
       ip-address: 10.0.1
 
   express-validator@7.2.1:
@@ -7859,19 +8028,19 @@ snapshots:
       lodash: 4.17.21
       validator: 13.12.0
 
-  express@5.1.0:
+  express@5.1.0(supports-color@8.1.1):
     dependencies:
       accepts: 2.0.0
-      body-parser: 2.2.0
+      body-parser: 2.2.0(supports-color@8.1.1)
       content-disposition: 1.0.0
       content-type: 1.0.5
       cookie: 0.7.2
       cookie-signature: 1.2.2
-      debug: 4.4.1
+      debug: 4.4.1(supports-color@8.1.1)
       encodeurl: 2.0.0
       escape-html: 1.0.3
       etag: 1.8.1
-      finalhandler: 2.1.0
+      finalhandler: 2.1.0(supports-color@8.1.1)
       fresh: 2.0.0
       http-errors: 2.0.0
       merge-descriptors: 2.0.0
@@ -7882,9 +8051,9 @@ snapshots:
       proxy-addr: 2.0.7
       qs: 6.14.0
       range-parser: 1.2.1
-      router: 2.2.0
-      send: 1.2.0
-      serve-static: 2.2.0
+      router: 2.2.0(supports-color@8.1.1)
+      send: 1.2.0(supports-color@8.1.1)
+      serve-static: 2.2.0(supports-color@8.1.1)
       statuses: 2.0.2
       type-is: 2.0.1
       vary: 1.1.2
@@ -7920,9 +8089,9 @@ snapshots:
     dependencies:
       to-regex-range: 5.0.1
 
-  finalhandler@2.1.0:
+  finalhandler@2.1.0(supports-color@8.1.1):
     dependencies:
-      debug: 4.4.1
+      debug: 4.4.1(supports-color@8.1.1)
       encodeurl: 2.0.0
       escape-html: 1.0.3
       on-finished: 2.4.1
@@ -7940,7 +8109,9 @@ snapshots:
     dependencies:
       tabbable: 6.2.0
 
-  follow-redirects@1.15.9: {}
+  follow-redirects@1.15.9(debug@4.4.3(supports-color@8.1.1)):
+    optionalDependencies:
+      debug: 4.4.3(supports-color@8.1.1)
 
   foreground-child@3.3.1:
     dependencies:
@@ -7988,17 +8159,17 @@ snapshots:
       wide-align: 1.1.5
     optional: true
 
-  gaxios@7.1.1:
+  gaxios@7.1.1(supports-color@8.1.1):
     dependencies:
       extend: 3.0.2
-      https-proxy-agent: 7.0.6
+      https-proxy-agent: 7.0.6(supports-color@8.1.1)
       node-fetch: 3.3.2
     transitivePeerDependencies:
       - supports-color
 
-  gcp-metadata@7.0.1:
+  gcp-metadata@7.0.1(supports-color@8.1.1):
     dependencies:
-      gaxios: 7.1.1
+      gaxios: 7.1.1(supports-color@8.1.1)
       google-logging-utils: 1.1.1
       json-bigint: 1.0.0
     transitivePeerDependencies:
@@ -8061,34 +8232,34 @@ snapshots:
       once: 1.4.0
       path-is-absolute: 1.0.1
 
-  google-auth-library@10.1.0:
+  google-auth-library@10.1.0(supports-color@8.1.1):
     dependencies:
       base64-js: 1.5.1
       ecdsa-sig-formatter: 1.0.11
-      gaxios: 7.1.1
-      gcp-metadata: 7.0.1
+      gaxios: 7.1.1(supports-color@8.1.1)
+      gcp-metadata: 7.0.1(supports-color@8.1.1)
       google-logging-utils: 1.1.1
-      gtoken: 8.0.0
+      gtoken: 8.0.0(supports-color@8.1.1)
       jws: 4.0.0
     transitivePeerDependencies:
       - supports-color
 
   google-logging-utils@1.1.1: {}
 
-  googleapis-common@8.0.0:
+  googleapis-common@8.0.0(supports-color@8.1.1):
     dependencies:
       extend: 3.0.2
-      gaxios: 7.1.1
-      google-auth-library: 10.1.0
+      gaxios: 7.1.1(supports-color@8.1.1)
+      google-auth-library: 10.1.0(supports-color@8.1.1)
       qs: 6.14.0
       url-template: 2.0.8
     transitivePeerDependencies:
       - supports-color
 
-  googleapis@152.0.0:
+  googleapis@152.0.0(supports-color@8.1.1):
     dependencies:
-      google-auth-library: 10.1.0
-      googleapis-common: 8.0.0
+      google-auth-library: 10.1.0(supports-color@8.1.1)
+      googleapis-common: 8.0.0(supports-color@8.1.1)
     transitivePeerDependencies:
       - supports-color
 
@@ -8096,9 +8267,9 @@ snapshots:
 
   graceful-fs@4.2.11: {}
 
-  gtoken@8.0.0:
+  gtoken@8.0.0(supports-color@8.1.1):
     dependencies:
-      gaxios: 7.1.1
+      gaxios: 7.1.1(supports-color@8.1.1)
       jws: 4.0.0
     transitivePeerDependencies:
       - supports-color
@@ -8172,27 +8343,27 @@ snapshots:
       statuses: 2.0.1
       toidentifier: 1.0.1
 
-  http-proxy-agent@4.0.1:
+  http-proxy-agent@4.0.1(supports-color@8.1.1):
     dependencies:
       '@tootallnate/once': 1.1.2
-      agent-base: 6.0.2
-      debug: 4.4.1
+      agent-base: 6.0.2(supports-color@8.1.1)
+      debug: 4.4.1(supports-color@8.1.1)
     transitivePeerDependencies:
       - supports-color
     optional: true
 
-  https-proxy-agent@5.0.1:
+  https-proxy-agent@5.0.1(supports-color@8.1.1):
     dependencies:
-      agent-base: 6.0.2
-      debug: 4.4.1
+      agent-base: 6.0.2(supports-color@8.1.1)
+      debug: 4.4.1(supports-color@8.1.1)
     transitivePeerDependencies:
       - supports-color
     optional: true
 
-  https-proxy-agent@7.0.6:
+  https-proxy-agent@7.0.6(supports-color@8.1.1):
     dependencies:
       agent-base: 7.1.4
-      debug: 4.4.1
+      debug: 4.4.1(supports-color@8.1.1)
     transitivePeerDependencies:
       - supports-color
 
@@ -8255,11 +8426,11 @@ snapshots:
 
   internmap@2.0.3: {}
 
-  ioredis@5.11.1:
+  ioredis@5.11.1(supports-color@8.1.1):
     dependencies:
       '@ioredis/commands': 1.10.0
       cluster-key-slot: 1.1.1
-      debug: 4.4.3
+      debug: 4.4.3(supports-color@8.1.1)
       denque: 2.1.0
       redis-errors: 1.2.0
       redis-parser: 3.0.0
@@ -8568,13 +8739,13 @@ snapshots:
 
   make-error@1.3.6: {}
 
-  make-fetch-happen@9.1.0:
+  make-fetch-happen@9.1.0(bluebird@3.4.7)(supports-color@8.1.1):
     dependencies:
       agentkeepalive: 4.6.0
-      cacache: 15.3.0
+      cacache: 15.3.0(bluebird@3.4.7)
       http-cache-semantics: 4.2.0
-      http-proxy-agent: 4.0.1
-      https-proxy-agent: 5.0.1
+      http-proxy-agent: 4.0.1(supports-color@8.1.1)
+      https-proxy-agent: 5.0.1(supports-color@8.1.1)
       is-lambda: 1.0.1
       lru-cache: 6.0.0
       minipass: 3.3.6
@@ -8584,7 +8755,7 @@ snapshots:
       minipass-pipeline: 1.2.4
       negotiator: 0.6.4
       promise-retry: 2.0.1
-      socks-proxy-agent: 6.2.1
+      socks-proxy-agent: 6.2.1(supports-color@8.1.1)
       ssri: 8.0.1
     transitivePeerDependencies:
       - bluebird
@@ -8815,12 +8986,12 @@ snapshots:
       detect-libc: 2.0.4
     optional: true
 
-  node-gyp@8.4.1:
+  node-gyp@8.4.1(bluebird@3.4.7)(supports-color@8.1.1):
     dependencies:
       env-paths: 2.2.1
       glob: 7.2.3
       graceful-fs: 4.2.11
-      make-fetch-happen: 9.1.0
+      make-fetch-happen: 9.1.0(bluebird@3.4.7)(supports-color@8.1.1)
       nopt: 5.0.0
       npmlog: 6.0.2
       rimraf: 3.0.2
@@ -9072,7 +9243,9 @@ snapshots:
 
   process@0.11.10: {}
 
-  promise-inflight@1.0.1:
+  promise-inflight@1.0.1(bluebird@3.4.7):
+    optionalDependencies:
+      bluebird: 3.4.7
     optional: true
 
   promise-retry@2.0.1:
@@ -9255,9 +9428,9 @@ snapshots:
       '@rollup/rollup-win32-x64-msvc': 4.44.2
       fsevents: 2.3.3
 
-  router@2.2.0:
+  router@2.2.0(supports-color@8.1.1):
     dependencies:
-      debug: 4.4.1
+      debug: 4.4.1(supports-color@8.1.1)
       depd: 2.0.0
       is-promise: 4.0.0
       parseurl: 1.3.3
@@ -9317,9 +9490,9 @@ snapshots:
 
   semver@7.7.2: {}
 
-  send@1.2.0:
+  send@1.2.0(supports-color@8.1.1):
     dependencies:
-      debug: 4.4.1
+      debug: 4.4.1(supports-color@8.1.1)
       encodeurl: 2.0.0
       escape-html: 1.0.3
       etag: 1.8.1
@@ -9333,12 +9506,12 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  serve-static@2.2.0:
+  serve-static@2.2.0(supports-color@8.1.1):
     dependencies:
       encodeurl: 2.0.0
       escape-html: 1.0.3
       parseurl: 1.3.3
-      send: 1.2.0
+      send: 1.2.0(supports-color@8.1.1)
     transitivePeerDependencies:
       - supports-color
 
@@ -9418,10 +9591,10 @@ snapshots:
 
   smart-buffer@4.2.0: {}
 
-  socks-proxy-agent@6.2.1:
+  socks-proxy-agent@6.2.1(supports-color@8.1.1):
     dependencies:
-      agent-base: 6.0.2
-      debug: 4.4.1
+      agent-base: 6.0.2(supports-color@8.1.1)
+      debug: 4.4.1(supports-color@8.1.1)
       socks: 2.8.5
     transitivePeerDependencies:
       - supports-color
@@ -9455,14 +9628,14 @@ snapshots:
 
   sprintf-js@1.1.3: {}
 
-  sqlite3@5.1.7:
+  sqlite3@5.1.7(bluebird@3.4.7)(supports-color@8.1.1):
     dependencies:
       bindings: 1.5.0
       node-addon-api: 7.1.1
       prebuild-install: 7.1.3
       tar: 6.2.1
     optionalDependencies:
-      node-gyp: 8.4.1
+      node-gyp: 8.4.1(bluebird@3.4.7)(supports-color@8.1.1)
     transitivePeerDependencies:
       - bluebird
       - supports-color
@@ -9882,7 +10055,7 @@ snapshots:
     optionalDependencies:
       vite: 6.3.5(@types/node@24.0.13)(jiti@2.4.2)(lightningcss@1.30.1)
 
-  vitepress-openapi@0.1.18(vitepress@1.6.4(@algolia/client-search@5.34.1)(@types/node@24.0.13)(axios@1.10.0)(lightningcss@1.30.1)(postcss@8.5.6)(qrcode@1.5.4)(search-insights@2.17.3)(typescript@5.8.3))(vue@3.5.18(typescript@5.8.3)):
+  vitepress-openapi@0.1.18(vitepress@1.6.4(@algolia/client-search@5.34.1)(@types/node@24.0.13)(axios@1.10.0(debug@4.4.3(supports-color@8.1.1)))(lightningcss@1.30.1)(postcss@8.5.6)(qrcode@1.5.4)(search-insights@2.17.3)(typescript@5.8.3))(vue@3.5.18(typescript@5.8.3)):
     dependencies:
       '@vueuse/core': 14.2.1(vue@3.5.18(typescript@5.8.3))
       class-variance-authority: 0.7.1
@@ -9890,12 +10063,12 @@ snapshots:
       lucide-vue-next: 0.577.0(vue@3.5.18(typescript@5.8.3))
       markdown-it-link-attributes: 4.0.1
       reka-ui: 2.9.2(vue@3.5.18(typescript@5.8.3))
-      vitepress: 1.6.4(@algolia/client-search@5.34.1)(@types/node@24.0.13)(axios@1.10.0)(lightningcss@1.30.1)(postcss@8.5.6)(qrcode@1.5.4)(search-insights@2.17.3)(typescript@5.8.3)
+      vitepress: 1.6.4(@algolia/client-search@5.34.1)(@types/node@24.0.13)(axios@1.10.0(debug@4.4.3(supports-color@8.1.1)))(lightningcss@1.30.1)(postcss@8.5.6)(qrcode@1.5.4)(search-insights@2.17.3)(typescript@5.8.3)
       vue: 3.5.18(typescript@5.8.3)
     transitivePeerDependencies:
       - '@vue/composition-api'
 
-  vitepress@1.6.4(@algolia/client-search@5.34.1)(@types/node@24.0.13)(axios@1.10.0)(lightningcss@1.30.1)(postcss@8.5.6)(qrcode@1.5.4)(search-insights@2.17.3)(typescript@5.8.3):
+  vitepress@1.6.4(@algolia/client-search@5.34.1)(@types/node@24.0.13)(axios@1.10.0(debug@4.4.3(supports-color@8.1.1)))(lightningcss@1.30.1)(postcss@8.5.6)(qrcode@1.5.4)(search-insights@2.17.3)(typescript@5.8.3):
     dependencies:
       '@docsearch/css': 3.8.2
       '@docsearch/js': 3.8.2(@algolia/client-search@5.34.1)(search-insights@2.17.3)
@@ -9908,7 +10081,7 @@ snapshots:
       '@vue/devtools-api': 7.7.7
       '@vue/shared': 3.5.18
       '@vueuse/core': 12.8.2(typescript@5.8.3)
-      '@vueuse/integrations': 12.8.2(axios@1.10.0)(focus-trap@7.6.5)(qrcode@1.5.4)(typescript@5.8.3)
+      '@vueuse/integrations': 12.8.2(axios@1.10.0(debug@4.4.3(supports-color@8.1.1)))(focus-trap@7.6.5)(qrcode@1.5.4)(typescript@5.8.3)
       focus-trap: 7.6.5
       mark.js: 8.11.1
       minisearch: 7.1.2
