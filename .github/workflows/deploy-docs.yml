@@ -7,14 +7,20 @@ on:
         paths:
             - 'docs/**'
 
+permissions:
+    contents: read
+
 jobs:
     build-and-deploy:
+        if: ${{ github.repository == 'LogicLabs-OU/OpenArchiver' && !github.event.repository.fork }}
         runs-on: ubuntu-latest
         permissions:
             contents: write
         steps:
             - name: Checkout repository
               uses: actions/checkout@v4
+              with:
+                  persist-credentials: false
 
             - name: Setup pnpm
               uses: pnpm/action-setup@v2
