@@ -11,6 +11,7 @@
 	},
 	"scripts": {
 		"build": "tsc && pnpm copy-assets",
+		"test:localization": "node --test test/localization.test.mjs",
 		"dev": "tsc --watch",
 		"copy-assets": "cp -r src/locales dist/locales",
 		"start:ingestion-worker": "node dist/workers/ingestion.worker.js",
@@ -49,8 +50,8 @@
 		"google-auth-library": "^10.1.0",
 		"googleapis": "^152.0.0",
 		"i18next": "^25.4.2",
-		"i18next-fs-backend": "^2.6.0",
-		"i18next-http-middleware": "^3.8.0",
+		"i18next-fs-backend": "^2.6.8",
+		"i18next-http-middleware": "^3.9.9",
 		"imapflow": "^1.0.191",
 		"ioredis": "^5.10.1",
 		"jose": "^6.0.11",

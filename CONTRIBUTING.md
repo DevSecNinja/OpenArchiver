@@ -130,12 +130,20 @@ source changes. The runner discovers both CommonJS (`*.test.cjs`) and ESM (`*.te
 boundaries, action isolation, explicit denial, no implicit ingestion-to-archive grants, and administrator
 wildcards. No real mailboxes, mail contents, attachments, or cloud credentials are used.
 
+The runner also exercises the real i18next filesystem backend and HTTP middleware against
+freshly compiled translation assets. Localization regressions cover all 11 packaged languages,
+an explicitly configured English fallback, controlled rejection of malformed language/namespace
+paths, and query/header handling without a language detector. Run just these tests with
+`pnpm --filter @open-archiver/backend test:localization` after building. See the
+[localization test notes](./packages/backend/test/README.md) for advisory applicability and
+the separate read-only, non-root dependency-fixture validation boundary.
+
 ### Coverage limits and follow-up work
 
 This is a build and policy-unit-test gate, not end-to-end archive validation. It does not establish
 authentication/session behavior, policy interpolation or database query filtering, ingestion, MIME or
 attachment parsing, indexing/search, export, deletion, or matching database/archive restoration.
-The tests deliberately import only the compiled policy module, not the application entry point.
+The tests import the compiled policy module and localization dependencies, not the application entry point.
 
 Only `esbuild` is approved in `pnpm-workspace.yaml` `allowBuilds`, and `sqlite3` is explicitly denied,
 so a normal locked installation does not build the SQLite native binding. A passing source build does not prove that
