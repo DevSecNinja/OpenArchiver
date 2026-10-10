@@ -69,10 +69,12 @@ pnpm install --frozen-lockfile
 pnpm build:oss
 ```
 
-`pnpm-workspace.yaml` allows only the previously approved `esbuild` dependency scripts. The other
-listed builds remain denied, including `sqlite3`; this toolchain change does not repair native SQLite
-runtime support. `verifyDepsBeforeRun: false` preserves explicit installation: `pnpm run` and
-`pnpm exec` must not install dependencies implicitly.
+`pnpm-workspace.yaml` approves dependency build scripts for `esbuild` and `sqlite3`; the other listed
+builds remain denied. The earlier toolchain-only foundation denied `sqlite3`. The portable runtime
+change now approves its native install/build script so explicit locked installations can prepare the
+binding for the target architecture. Approval alone is not proof that the binding loads; run the native
+runtime checks described below. `verifyDepsBeforeRun: false` preserves explicit installation:
+`pnpm run` and `pnpm exec` must not install dependencies implicitly.
 
 `minimumReleaseAgeStrict: true` makes pnpm reject unattended updates when no requested version meets
 its release-age policy, rather than automatically recording exceptions. Interactive exceptions require
@@ -201,12 +203,15 @@ restoration.
 The policy tests import the compiled policy module, HTTP checks use synthetic loopback fixtures, and
 storage checks call the compiled service with isolated database rows, not the application entry point.
 
-Only `esbuild` is approved in `pnpm-workspace.yaml` `allowBuilds`, and `sqlite3` is explicitly denied,
-so a normal locked installation does not build the SQLite native binding. A passing source build does not prove that
-SQLite or the production application can start. Native-module checks, image builds, non-root startup,
-migrations, synthetic ingestion/search, and restore integration coverage belong to
-[issue #2](https://github.com/DevSecNinja/OpenArchiver/issues/2). Do not bypass native checks or treat
-this workflow as evidence that the runtime gap is fixed.
+The historical toolchain-only gate did not approve SQLite's native build. The current `allowBuilds`
+policy approves both `esbuild` and `sqlite3`, but a passing source build still does not prove that SQLite
+or the production application can start. After building, `pnpm test:runtime` checks native SQLite CRUD,
+startup diagnostics and worker supervision. The separate `.github/workflows/container-runtime.yml`
+builds the production image and runs `pnpm test:integration`'s driver on native amd64 and arm64,
+covering non-root/read-only startup, migrations, synthetic ingestion/search, shutdown and paired
+database/archive restore. See the [runtime and recovery guide](docs/user-guides/maintained-fork.md)
+for commands and coverage limits. Do not substitute this source-validation workflow for those runtime
+checks or install dependencies at container startup.
 
 The frontend build is not a standalone `svelte-check` pass; full frontend type and behavior validation
 belongs to [issue #6](https://github.com/DevSecNinja/OpenArchiver/issues/6). This baseline also does not
