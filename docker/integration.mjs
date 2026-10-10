@@ -205,11 +205,18 @@ const queueState = () =>
 			const counts = await Promise.all(
 				queues.map((queue) => queue.getJobCounts('active', 'wait', 'prioritized', 'failed'))
 			);
+			const delayed = (
+				await Promise.all(queues.map((queue) => queue.getJobs(['delayed'], 0, -1)))
+			).flat();
 			const completed = await queues[1].getJobs(['completed'], 0, -1);
 			return {
-				drained: counts.every((count) =>
-					Object.values(count).every((value) => value === 0)
-				),
+				drained:
+					counts.every((count) => Object.values(count).every((value) => value === 0)) &&
+					delayed.every(
+						(job) =>
+							(job.repeatJobKey || job.opts.repeat) &&
+							['schedule-continuous-sync', 'reconcile-index'].includes(job.name)
+					),
 				reindexes: completed.filter((job) => job.name === 'reindex').length,
 			};
 		} finally {
@@ -538,6 +545,43 @@ try {
 	await waitFor('persistent restart', () => request('auth/status').body.needsSetup === false);
 	assert.deepEqual(records(), original);
 	await waitFor('queues drained before backup', () => queueState().drained);
+	const delayedFixture = inside(async () => {
+		const { Queue } = require('bullmq');
+		const queue = new Queue('indexing', {
+			connection: {
+				host: process.env.REDIS_HOST,
+				password: process.env.REDIS_PASSWORD,
+			},
+		});
+		try {
+			const job = await queue.add('reconcile-index', {}, { delay: 3_600_000 });
+			return job.id;
+		} finally {
+			await queue.close();
+		}
+	});
+	try {
+		assert.equal(queueState().drained, false, 'An ordinary delayed job must block backup');
+	} finally {
+		inside(async (id) => {
+			const { Queue } = require('bullmq');
+			const queue = new Queue('indexing', {
+				connection: {
+					host: process.env.REDIS_HOST,
+					password: process.env.REDIS_PASSWORD,
+				},
+			});
+			try {
+				const job = await queue.getJob(id);
+				if (!job) throw new Error('Delayed backup fixture disappeared before removal');
+				await job.remove();
+				return true;
+			} finally {
+				await queue.close();
+			}
+		}, delayedFixture);
+	}
+	assert.equal(queueState().drained, true, 'Only known future repeat jobs may remain');
 	await inside(async () => {
 		const { MeiliSearch } = require('meilisearch');
 		const client = new MeiliSearch({
