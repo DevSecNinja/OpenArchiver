@@ -19,6 +19,20 @@ jobs:
         name: OSS build and regressions
         runs-on: ubuntu-latest
         timeout-minutes: 30
+        services:
+            postgres:
+                image: postgres:17-alpine
+                env:
+                    POSTGRES_USER: storage_test
+                    POSTGRES_PASSWORD: storage_test
+                    POSTGRES_DB: postgres
+                ports:
+                    - 5432/tcp
+                options: >-
+                    --health-cmd "pg_isready -U storage_test -d postgres"
+                    --health-interval 5s
+                    --health-timeout 5s
+                    --health-retries 10
         steps:
             - name: Checkout
               uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -42,7 +56,9 @@ jobs:
             - name: Build OSS
               run: pnpm build:oss
 
-            - name: Run synthetic policy regressions
+            - name: Run synthetic policy and storage authorization regressions
+              env:
+                  STORAGE_AUTH_TEST_DATABASE_URL: postgresql://storage_test:storage_test@127.0.0.1:${{ job.services.postgres.ports[5432] }}/postgres
               run: pnpm test:oss
 
             - name: Check frontend types

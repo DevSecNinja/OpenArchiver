@@ -101,6 +101,66 @@ When changing this toolchain, run `pnpm --filter @open-archiver/backend update x
 twice, checking that the recorded checksum survives each operation and that no unrelated dependency
 resolutions or integrity values change, then repeat the frozen install and OSS source build.
 
+### Backend authorization and HTTP regression checks
+
+After a locked install with the repository's declared pnpm version, rebuild and run these focused
+checks from the repository root:
+
+```sh
+pnpm install --frozen-lockfile
+pnpm build:oss
+node --test packages/backend/test/authorization-dependencies.test.cjs packages/backend/test/http-dependencies.test.cjs
+pnpm --filter @open-archiver/backend list @casl/ability axios express express-rate-limit express-validator --depth 0
+```
+
+The authorization tests load the compiled `createAbilityFor` and mailbox-condition normalization
+code. They check individual ingestion and archive instances, source/mailbox allow and deny rules,
+default denial, and administrator access. Storage downloads use archive permissions, not a separate
+storage subject; these tests cover the policy decision, not the database-backed storage-path lookup
+or authentication middleware. The PostgreSQL-backed storage checks below cover the separate lookup.
+
+The HTTP tests bind an ephemeral loopback port and exercise Express JSON parsing and async errors,
+Axios redirects/streaming/error responses, request validation, and rate-limit responses/headers.
+They also check proxy-trust CIDR matching, bounded optional route expansion, and wildcard parameters
+through Express's actual transitive dependencies; no extra direct dependencies or overrides are needed.
+They use synthetic routes rather than the application server and disable Axios proxy discovery.
+Axios and express-validator are declared dependencies but currently have no direct backend source
+imports; their fixtures check package compatibility, not live connector behavior. No database,
+mailbox credentials, Redis, search service, or cloud resources are needed for these focused tests.
+
+Record the resolved versions from the rebuilt installation alongside any audit/scan findings in
+the dependency PR. A passing fixture or dependency inventory does not establish that the full
+artifact is free of vulnerabilities.
+
+### PostgreSQL storage authorization checks
+
+`storage-authorization.test.cjs` calls the compiled `ArchivedEmailService.canAccessStoragePath`
+against a real PostgreSQL database. It exercises the email query, attachment lookup and carrier-email
+query through the real IAM service, CASL rules, filter builder and SQL translator. Cases include both
+source/mailbox boundaries, normalized addresses, explicit denial, read versus search permission,
+administrator access, shared attachments and missing/unreferenced files.
+
+For local execution, start a disposable PostgreSQL 17 server on loopback with a dedicated test role
+allowed to create databases. Use only test credentials; do not point these checks at an application
+database. After the OSS build, set the explicit test URL and run:
+
+```sh
+STORAGE_AUTH_TEST_DATABASE_URL='postgresql://storage_test:storage_test@127.0.0.1:5432/postgres' \
+  node --test packages/backend/test/storage-authorization.test.cjs
+```
+
+The fixture accepts only a loopback `/postgres` maintenance URL, creates a uniquely named database,
+applies the committed migrations, inserts synthetic records and drops only its own database afterward.
+It never reads `DATABASE_URL` or real provider credentials. The connection export is replaced with
+a real Drizzle/PostgreSQL connection to that database; no authorization, filter or query result is
+mocked. Unrelated ingestion, storage I/O, search and deletion entry points are blocked with
+fail-on-use test doubles to avoid starting provider, queue or native-SQLite dependencies.
+
+Without the explicit test URL this check is marked skipped locally; in CI a missing URL fails.
+The OSS validation job supplies an ephemeral PostgreSQL service and test-only credentials, so this
+coverage runs with `pnpm test:oss`. These are service/database authorization tests, not download-route,
+filesystem containment, authentication or full archive end-to-end tests.
+
 ## OSS validation in this fork
 
 From a clean checkout, use Node.js 22 and the pnpm release declared in the root
@@ -129,14 +189,19 @@ source changes. The runner discovers both CommonJS (`*.test.cjs`) and ESM (`*.te
 `packages/backend/test`. Its synthetic policy/subject fixtures cover default denial, mailbox and source
 boundaries, action isolation, explicit denial, no implicit ingestion-to-archive grants, and administrator
 wildcards. No real mailboxes, mail contents, attachments, or cloud credentials are used.
+The same runner also discovers the focused HTTP and PostgreSQL storage authorization checks described
+above. CI supplies the isolated PostgreSQL service; local database coverage requires the explicit test URL.
 
 ### Coverage limits and follow-up work
 
-This is a build, policy-unit-test, and frontend-adapter gate, not end-to-end archive validation.
+This is a build, policy/HTTP/storage-authorization, and frontend-adapter regression gate,
+not end-to-end archive validation.
 Frontend regressions exercise compiled session and proxy behavior against a synthetic loopback API,
-not real API authentication. It does not establish policy interpolation or database query filtering,
-ingestion, MIME or attachment parsing, indexing/search, export, deletion, or matching database/archive restoration.
-The tests deliberately import only the compiled policy module, not the application entry point.
+not real API authentication. The gate does not establish all policy interpolation or database filtering,
+ingestion, MIME or attachment parsing, indexing/search, export, deletion, or matching database/archive
+restoration.
+The policy tests import the compiled policy module, HTTP checks use synthetic loopback fixtures, and
+storage checks call the compiled service with isolated database rows, not the application entry point.
 
 Only `esbuild` is approved in `pnpm-workspace.yaml` `allowBuilds`, and `sqlite3` is explicitly denied,
 so a normal locked installation does not build the SQLite native binding. A passing source build does not prove that
