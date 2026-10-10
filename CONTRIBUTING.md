@@ -59,7 +59,11 @@ fork patches. Do not use Renovate to automatically merge upstream commits.
 
 ### Pinned toolchain and tarball integrity
 
-Use Node.js 22 and the pnpm version pinned in `package.json` (12.10.1). The Docker build and
+Use Node.js 22.13 or newer in the Node 22 release line and the pnpm version pinned in
+`package.json` (12.10.1). The selected node-gyp 12.4.0 builder requires at least Node 22.9,
+and the workspace's vitepress-openapi 0.1.18 documentation tooling requires at least 22.13.
+The root minimum covers both. These are dependency engine requirements; the native/source-build
+validation was executed on Node 22.23.3, not on the minimum version. The Docker build and
 documentation workflow read that pin rather than selecting another version. Enable the Corepack
 pnpm shim so nested workspace scripts use the same version. From a clean checkout:
 
@@ -103,7 +107,7 @@ resolutions or integrity values change, then repeat the frozen install and OSS s
 
 ### SQLite native dependency regression checks
 
-After the clean frozen install and OSS build above, run on Linux with Node.js 22:
+After the clean frozen install and OSS build above, run on Linux with Node.js 22.13+:
 
 ```sh
 pnpm --filter @open-archiver/backend test:native
@@ -119,7 +123,7 @@ has no SQLite cache API; these are separate native and connector/storage checks,
 for application ingestion, indexing and paired PostgreSQL/object-storage restore. They do not cover
 PST imports or untested architectures.
 
-Validate source fallback separately in a disposable Alpine Node.js 22 build environment containing
+Validate source fallback separately in a disposable Alpine Node.js 22.13+ build environment containing
 Python 3, make, g++, and the image's Node headers under `/usr/local/include/node`. Install development
 dependencies explicitly (`pnpm install --frozen-lockfile --prod=false --store-dir=/pnpm/store`), build
 OSS, then disable network access and force the native source rebuild:
@@ -201,7 +205,7 @@ filesystem containment, authentication or full archive end-to-end tests.
 
 ## OSS validation in this fork
 
-From a clean checkout, use Node.js 22 and the pnpm release declared in the root
+From a clean checkout, use Node.js 22.13+ and the pnpm release declared in the root
 `package.json` `packageManager` field. Do not substitute a different pnpm release or regenerate
 the lockfile just to get validation to pass. Run these commands from the repository root on Linux
 (or in WSL on Windows, since the existing build uses POSIX commands):
@@ -228,6 +232,8 @@ source changes. The runner discovers both CommonJS (`*.test.cjs`) and ESM (`*.te
 boundaries, action isolation, explicit denial, no implicit ingestion-to-archive grants, and administrator
 wildcards. The native SQLite and EML connector/storage fixtures described above are discovered by
 the same runner. No real mailboxes, mail contents, attachments, or cloud credentials are used.
+The engine-metadata regression checks that the declared project minimum satisfies the installed
+SQLite builder and documentation tooling; it does not execute the application on that minimum.
 The same runner also discovers the focused HTTP and PostgreSQL storage authorization checks described
 above. CI supplies the isolated PostgreSQL service; local database coverage requires the explicit test URL.
 
