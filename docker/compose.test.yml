@@ -1,0 +1,11 @@
+# Integration fixtures only; production sidecar upgrades require separate review.
+# Pin multi-platform indexes so native runners select their own architecture.
+services:
+    postgres:
+        image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+    valkey:
+        image: valkey/valkey:8-alpine@sha256:081c2f5cb575efc901aa80ff9cdbd1ec6a301682fd35e1ebb4b0990a4a4a8507
+    meilisearch:
+        image: getmeili/meilisearch:v1.54@sha256:e68913ab7d6f5b159529e472cfd362ce3c741fafd3c127961b2142abbe41b3c9
+    tika:
+        image: apache/tika:3.3.1.0-full@sha256:d8e6ed96260ad89307a93195a1b856102987a818ac648502f8efbaf313d32470

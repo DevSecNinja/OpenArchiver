@@ -3,15 +3,20 @@
 # Exit immediately if a command exits with a non-zero status
 set -e
 
-# Run pnpm install to ensure all dependencies, including native addons,
-# are built for the container's architecture. This is crucial for
-# multi-platform Docker images, as it prevents "exec format error"
-# when running on a different architecture than the one used for building.
-pnpm install --frozen-lockfile --prod
+# Split worker containers may skip migrations only after a migration job succeeds.
+case "${RUN_MIGRATIONS-true}" in
+    true)
+        (cd /app/packages/backend && node dist/database/migrate.js)
+        ;;
+    false)
+        ;;
+    *)
+        echo "RUN_MIGRATIONS must be true or false" >&2
+        exit 1
+        ;;
+esac
 
-# Run database migrations before starting the application to prevent
-# race conditions where the app starts before the database is ready.
-pnpm db:migrate
+export PORT="${PORT_FRONTEND:-3000}"
 
 # Execute the main container command
 exec "$@"

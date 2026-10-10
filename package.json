@@ -4,7 +4,7 @@
 	"private": true,
 	"license": "SEE LICENSE IN LICENSE file",
 	"scripts": {
-		"build:oss": "pnpm --filter \"./packages/*\" --filter \"!./packages/enterprise\" --filter \"./apps/open-archiver\" build",
+		"build:oss": "pnpm --workspace-concurrency=1 --filter \"./packages/*\" --filter \"!./packages/enterprise\" --filter \"./apps/open-archiver\" build",
 		"test:oss": "cd packages/backend/test && node --test",
 		"build:enterprise": "cross-env VITE_ENTERPRISE_MODE=true pnpm build",
 		"start:oss": "dotenv -- concurrently \"node apps/open-archiver/dist/index.js\" \"pnpm --filter @open-archiver/frontend start\"",
@@ -18,8 +18,10 @@
 		"db:generate": "dotenv -- pnpm --filter @open-archiver/backend db:generate",
 		"db:migrate": "dotenv -- pnpm --filter @open-archiver/backend db:migrate",
 		"db:migrate:dev": "dotenv -- pnpm --filter @open-archiver/backend db:migrate:dev",
-		"docker-start:oss": "concurrently \"pnpm start:workers\" \"pnpm start:oss\"",
+		"docker-start:oss": "concurrently --kill-others --success all --names api,frontend,ingestion,indexing,scheduler \"exec node apps/open-archiver/dist/index.js\" \"cd packages/frontend && exec node build/index.js\" \"exec node packages/backend/dist/workers/ingestion.worker.js\" \"exec node --max-old-space-size=${INDEXING_WORKER_MAX_OLD_SPACE_MB:-2048} packages/backend/dist/workers/indexing.worker.js\" \"exec node packages/backend/dist/jobs/schedulers/sync-scheduler.js\"",
 		"docker-start:enterprise": "concurrently \"pnpm start:workers\" \"pnpm start:enterprise\"",
+		"test:runtime": "node --test docker/runtime.test.mjs",
+		"test:integration": "node docker/integration.mjs",
 		"docs:gen-spec": "node packages/backend/scripts/generate-openapi-spec.mjs",
 		"docs:dev": "pnpm docs:gen-spec && vitepress dev docs --port 3009",
 		"docs:build": "pnpm docs:gen-spec && vitepress build docs",
@@ -28,7 +30,7 @@
 		"lint": "prettier --check ."
 	},
 	"dependencies": {
-		"concurrently": "^9.2.0",
+		"concurrently": "9.2.4",
 		"dotenv-cli": "8.0.0"
 	},
 	"devDependencies": {
