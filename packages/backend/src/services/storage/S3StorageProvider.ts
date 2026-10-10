@@ -43,9 +43,8 @@ export class S3StorageProvider implements IStorageProvider {
 		options?: StoragePutOptions
 	): Promise<void> {
 		if (options?.overwrite === false && !this.conditionalPutUnsupported) {
-			// A conditional single-part put. `Upload` from lib-storage (3.844) does not forward
-			// IfNoneMatch, and StorageService always hands the provider a Buffer, so a plain
-			// PutObject is the right call.
+			// Keep conditional creation on a single PutObject with an explicit IfNoneMatch,
+			// independent of lib-storage's multipart upload behavior.
 			const body = Buffer.isBuffer(content)
 				? content
 				: await streamToBuffer(content as NodeJS.ReadableStream);
