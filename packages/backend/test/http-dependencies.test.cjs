@@ -30,6 +30,8 @@ app.get('/download', (req, res) => {
 	res.attachment('synthetic.eml').send(download);
 });
 app.get('/redirect', (req, res) => res.redirect('/download'));
+app.get('/optional/{a}{b}{c}:tail', (req, res) => res.json(req.params));
+app.get('/wild/*first-*second-:last', (req, res) => res.json(req.params));
 app.get(
 	'/limited',
 	rateLimit({
@@ -146,6 +148,43 @@ test('rate limiting admits two requests then returns 429 with standard retry hea
 		assert.ok(Number(error.response.headers['retry-after']) > 0);
 		assert.ok(Number(error.response.headers['ratelimit-reset']) > 0);
 		assert.equal(error.response.headers['x-ratelimit-limit'], undefined);
+		return true;
+	});
+});
+
+test('Express trust compilation keeps IPv4 clients outside unrelated IPv6 CIDRs', () => {
+	for (const subnet of ['::ffff:10.0.0.0/8', '::/1']) {
+		const trust = express().set('trust proxy', subnet).get('trust proxy fn');
+		assert.equal(trust('203.0.113.10'), false, subnet);
+		assert.equal(trust('10.1.2.3'), false, subnet);
+	}
+	for (const subnet of ['10.0.0.0/8', '::ffff:10.0.0.0/104']) {
+		const trust = express().set('trust proxy', subnet).get('trust proxy fn');
+		assert.equal(trust('10.1.2.3'), true, subnet);
+		assert.equal(trust('203.0.113.10'), false, subnet);
+	}
+	const trust = express().set('trust proxy', '2001:db8::/32').get('trust proxy fn');
+	assert.equal(trust('2001:db8::1'), true);
+	assert.equal(trust('2001:db9::1'), false);
+	assert.equal(trust('203.0.113.10'), false);
+});
+
+test('Express bounds optional route expansion and preserves optional/wildcard parameters', async () => {
+	assert.throws(
+		() => express().get(`/${'{a}'.repeat(9)}:tail`, (req, res) => res.end()),
+		/Too many path combinations/
+	);
+	for (const url of ['/optional/abcz', '/optional/z']) {
+		const response = await client.get(url);
+		assert.equal(response.status, 200);
+		assert.deepEqual(response.data, { tail: 'z' });
+	}
+	const response = await client.get('/wild/a-b-c');
+	assert.equal(response.status, 200);
+	assert.deepEqual(response.data, { first: ['a'], second: ['b'], last: 'c' });
+	await assert.rejects(client.get('/wild/a-b-'), (error) => {
+		assert.equal(axios.isAxiosError(error), true);
+		assert.equal(error.response.status, 404);
 		return true;
 	});
 });

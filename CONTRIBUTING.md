@@ -121,6 +121,8 @@ or authentication middleware.
 
 The HTTP tests bind an ephemeral loopback port and exercise Express JSON parsing and async errors,
 Axios redirects/streaming/error responses, request validation, and rate-limit responses/headers.
+They also check proxy-trust CIDR matching, bounded optional route expansion, and wildcard parameters
+through Express's actual transitive dependencies; no extra direct dependencies or overrides are needed.
 They use synthetic routes rather than the application server and disable Axios proxy discovery.
 Axios and express-validator are declared dependencies but currently have no direct backend source
 imports; their fixtures check package compatibility, not live connector behavior. No database,
