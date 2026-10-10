@@ -45,6 +45,16 @@ jobs:
             - name: Run synthetic policy regressions
               run: pnpm test:oss
 
+            - name: Check frontend types
+              run: pnpm --filter @open-archiver/frontend check
+
+            - name: Run isolated production frontend regressions
+              run: |
+                  docker build --tag openarchiver-frontend-test packages/frontend/tests
+                  docker run --rm --network none --read-only --tmpfs /tmp \
+                    --mount "type=bind,source=$GITHUB_WORKSPACE,target=/app,readonly" \
+                    openarchiver-frontend-test
+
     renovate:
         name: Renovate configuration
         runs-on: ubuntu-latest

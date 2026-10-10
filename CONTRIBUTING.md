@@ -132,9 +132,10 @@ wildcards. No real mailboxes, mail contents, attachments, or cloud credentials a
 
 ### Coverage limits and follow-up work
 
-This is a build and policy-unit-test gate, not end-to-end archive validation. It does not establish
-authentication/session behavior, policy interpolation or database query filtering, ingestion, MIME or
-attachment parsing, indexing/search, export, deletion, or matching database/archive restoration.
+This is a build, policy-unit-test, and frontend-adapter gate, not end-to-end archive validation.
+Frontend regressions exercise compiled session and proxy behavior against a synthetic loopback API,
+not real API authentication. It does not establish policy interpolation or database query filtering,
+ingestion, MIME or attachment parsing, indexing/search, export, deletion, or matching database/archive restoration.
 The tests deliberately import only the compiled policy module, not the application entry point.
 
 Only `esbuild` is approved in `pnpm-workspace.yaml` `allowBuilds`, and `sqlite3` is explicitly denied,
@@ -144,10 +145,13 @@ migrations, synthetic ingestion/search, and restore integration coverage belong 
 [issue #2](https://github.com/DevSecNinja/OpenArchiver/issues/2). Do not bypass native checks or treat
 this workflow as evidence that the runtime gap is fixed.
 
-The frontend build is not a standalone `svelte-check` pass; full frontend type and behavior validation
-belongs to [issue #6](https://github.com/DevSecNinja/OpenArchiver/issues/6). This baseline also does not
-run repository-wide Prettier checks because inherited formatting warnings would obscure the focused
-gate. Check formatting only for files you change; do not mass-format unrelated source.
+The workflow separately runs `pnpm --filter @open-archiver/frontend check` and the compiled
+production-adapter regressions described in `packages/frontend/README.md`. It reuses the OSS source
+build in a read-only Node 22 container with no external network or published host ports; the test
+starts a synthetic API on loopback port 4000. This does not prove real backend authorization or
+archive processing. The workflow does not run repository-wide Prettier checks because inherited
+formatting warnings would obscure the focused gate. Check formatting only for files you change;
+do not mass-format unrelated source.
 
 The inherited Docker publication, release tagging, Pages deployment (including its upstream CNAME),
 and CLA jobs are restricted to the non-fork `LogicLabs-OU/OpenArchiver` repository. Their existing

@@ -38,6 +38,13 @@ The equivalent package command is
 source build and the same isolation; it does not install packages or rebuild.
 Remove the task-owned image after use.
 
+The read-only OSS validation workflow also runs the frontend type check and
+these regressions after `pnpm build:oss`. It mounts the already-built checkout
+read-only in a Node 22 container with networking disabled and no published ports;
+it does not rebuild or install packages inside the test container.
+`tests/Dockerfile` pins that runner image by digest and keeps it discoverable by
+Renovate's existing Dockerfile manager.
+
 The test starts its own frontend on loopback port 3000 and a synthetic HTTP API
 on port 4000 in the same network namespace, preserving the production
 `localhost:4000` contract. It does not start the real backend or require SQLite,
