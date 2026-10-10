@@ -4,12 +4,19 @@
 
 # Node
 node_modules
+**/node_modules
 .pnpm-store
 
 # Env
 .env
 .env.*
+**/.env
+**/.env.*
 !/.env.example
+**/.npmrc
+**/.yarnrc.yml
+**/.ssh
+**/.aws
 
 # Logs
 logs
@@ -44,3 +51,31 @@ Dockerfile
 
 # Local data
 meili_data
+meilidata
+pgdata
+valkeydata
+archiver-data
+data
+backups
+uploads
+secrets
+**/*.pst
+**/*.eml
+**/*.mbox
+**/*.zip
+**/*.sqlite
+**/*.sqlite3
+**/*.db
+**/*.dump
+**/*.sql.gz
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/license.jwt
+
+# Do not copy host build artifacts over the container's build.
+**/dist
+**/build
+**/.svelte-kit
+**/*.tsbuildinfo

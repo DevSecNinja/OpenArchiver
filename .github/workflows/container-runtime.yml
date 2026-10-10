@@ -1,0 +1,68 @@
+name: Container runtime
+
+on:
+    pull_request:
+        paths:
+            - '.github/workflows/container-runtime.yml'
+            - '.dockerignore'
+            - '.gitattributes'
+            - 'package.json'
+            - 'pnpm-*.yaml'
+            - '*tsconfig*.json'
+            - 'apps/open-archiver/**'
+            - 'packages/backend/**'
+            - 'packages/frontend/**'
+            - 'packages/types/**'
+            - 'docker/**'
+            - 'docker-compose.yml'
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+concurrency:
+    group: container-runtime-${{ github.workflow }}-${{ github.ref }}
+    cancel-in-progress: true
+
+jobs:
+    runtime:
+        strategy:
+            fail-fast: false
+            max-parallel: 1
+            matrix:
+                include:
+                    - runner: ubuntu-24.04
+                      architecture: amd64
+                    - runner: ubuntu-24.04-arm
+                      architecture: arm64
+        runs-on: ${{ matrix.runner }}
+        timeout-minutes: 45
+        steps:
+            - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+            - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+              with:
+                  node-version: '22.23.3'
+            - name: Seed host-only build context markers
+              shell: bash
+              run: |
+                  mkdir -p packages/backend/node_modules packages/backend/dist \
+                    packages/frontend/build packages/frontend/.svelte-kit secrets data
+                  printf 'host incremental cache\n' > packages/types/tsconfig.tsbuildinfo
+                  printf 'host dependency\n' > packages/backend/node_modules/.host-only
+                  printf 'host output\n' > packages/backend/dist/.host-only
+                  printf 'host output\n' > packages/frontend/build/.host-only
+                  printf 'host output\n' > packages/frontend/.svelte-kit/.host-only
+                  printf 'SYNTHETIC_HOST_MARKER=true\n' > packages/backend/.env.host-only
+                  printf 'host-only=true\n' > packages/backend/.npmrc
+                  printf 'synthetic host secret marker\n' > secrets/.host-only
+                  printf 'synthetic host archive marker\n' > data/.host-only
+            - name: Build source, run runtime tests, and verify final dependencies
+              run: docker build --progress=plain -f apps/open-archiver/Dockerfile -t open-archiver:test .
+            - name: Record and verify target architecture
+              env:
+                  EXPECTED_ARCHITECTURE: ${{ matrix.architecture }}
+              run: |
+                  docker image inspect open-archiver:test --format '{{.Id}} {{.Os}}/{{.Architecture}}'
+                  test "$(docker image inspect open-archiver:test --format '{{.Architecture}}')" = "$EXPECTED_ARCHITECTURE"
+            - name: Exercise default command and archive recovery without external networking
+              run: node docker/integration.mjs

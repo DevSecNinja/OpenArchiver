@@ -1,5 +1,8 @@
 # Installation Guide
 
+For source builds, first read the [container runtime and recovery guide](./maintained-fork.md).
+Its non-root volume ownership and build requirements differ from the upstream prebuilt image.
+
 This guide will walk you through setting up Open Archiver using Docker Compose. This is the recommended method for deploying the application.
 
 ## Prerequisites
@@ -13,26 +16,19 @@ This guide will walk you through setting up Open Archiver using Docker Compose. 
 First, clone the Open Archiver repository to your machine:
 
 ```bash
-git clone https://github.com/LogicLabs-OU/OpenArchiver.git
+git clone https://github.com/DevSecNinja/OpenArchiver.git
 cd OpenArchiver
 ```
 
-## 2. Create a Directory for Local Storage
+## 2. Prepare Writable Storage
 
-> This is only required if you want to use local storage to store archived email and attachments. If you plan to use S3 for data storage, you can skip this step.
+The supplied Compose file uses a named volume, not a host bind mount. The new image runs as UID/GID
+1000 by default, so storage must be writable by that container identity rather than your login user.
+Local staging storage is required even when S3 holds the durable archive.
 
-Before configuring the application, you should create a directory on your host machine where Open Archiver will store its data (such as emails and attachments in case of using local storage for data storage). Manually creating this directory helps prevent potential permission issues.
-
-Foe examples, you can use this path `/var/data/open-archiver`.
-
-Run the following commands to create the directory and set the correct permissions:
-
-```bash
-sudo mkdir -p /var/data/open-archiver
-sudo chown -R $(id -u):$(id -g) /var/data/open-archiver
-```
-
-This ensures the directory is owned by your current user, which is necessary for the application to have write access. You will set this path in your `.env` file in the next step.
+For existing data, alternate UIDs, rootless engines, or bind mounts, follow the
+[ownership and initialization instructions](./maintained-fork.md#container-contract) before starting
+the application. Do not assume an existing root-owned volume will become writable automatically.
 
 ## 3. Configure Your Environment
 
@@ -48,7 +44,7 @@ Now, open the `.env` file in a text editor and customize the settings.
 
 ### Key Configuration Steps
 
-1.  **Set the Storage Path**: Find the `STORAGE_LOCAL_ROOT_PATH` variable and set it to the path you just created.
+1.  **Set the Storage Path**: `STORAGE_LOCAL_ROOT_PATH` is a path inside the container, not a host directory. Keep the default below for the supplied named-volume layout, or adjust the volume mount and ownership together.
 
     ```env
     STORAGE_LOCAL_ROOT_PATH=/var/data/open-archiver
@@ -193,12 +189,12 @@ These variables are used by `docker-compose.yml` to configure the services.
 Once you have configured your `.env` file, you can start all the services using Docker Compose:
 
 ```bash
-docker compose up -d
+docker compose up -d --build
 ```
 
 This command will:
 
-- Pull the required Docker images for the frontend, backend, database, and other services.
+- Build the application from local source and pull the database and other sidecar images.
 - Create and start the containers in the background (`-d` flag).
 - Create the persistent volumes for your data.
 
@@ -236,11 +232,8 @@ To update your Open Archiver instance to the latest version, run the following c
 # Pull the latest changes from the repository
 git pull
 
-# Pull the latest Docker images
-docker compose pull
-
-# Restart the services with the new images
-docker compose up -d
+# Rebuild reviewed application source and restart
+docker compose up -d --build
 ```
 
 ## Deploying on Coolify

@@ -2,6 +2,10 @@
 
 This guide provides instructions for upgrading your Open Archiver instance to the latest version.
 
+This fork builds the application locally. Follow the
+[consistent backup and restore procedure](../maintained-fork.md#consistent-backup-and-restore) before
+upgrading, and review upstream changes instead of automatically merging them.
+
 ## Checking for New Versions
 
 Open Archiver automatically checks for new versions and will display a notification in the footer of the web interface when an update is available. You can find a list of all releases and their release notes on the [GitHub Releases](https://github.com/LogicLabs-OU/OpenArchiver/releases) page.
@@ -16,10 +20,10 @@ To upgrade your Open Archiver instance, follow these steps:
     git pull
     ```
 
-2.  **Pull the latest Docker images**:
+2.  **Build the reviewed application source**:
 
     ```bash
-    docker compose pull
+    docker compose build open-archiver
     ```
 
 3.  **Restart the services with the new images**:

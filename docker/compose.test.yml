@@ -1,0 +1,10 @@
+# Integration fixtures only; production sidecar upgrades require separate review.
+services:
+    postgres:
+        image: postgres:17-alpine@sha256:aa90e97ee862e558111d34cfb8b2c4bec768c2b039fb791341686928560263b3
+    valkey:
+        image: valkey/valkey:8-alpine@sha256:32627109abf6f741121096b45c732f758876803efd7b2e1018ebc0350d117119
+    meilisearch:
+        image: getmeili/meilisearch:v1.54@sha256:e95d49060218260d5c843f8dd70850c8fbbdf9c5148addccbd45eaa246d874d3
+    tika:
+        image: apache/tika:3.3.1.0-full@sha256:a3892121eafdee277b860e458b9966abfd11112d49f84cd494f5e87da4292b95

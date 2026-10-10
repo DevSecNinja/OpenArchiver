@@ -70,6 +70,10 @@ Open Archiver is built on a modern, scalable, and maintainable technology stack:
 
 ## Deployment
 
+This fork builds the application from source. Read the [non-root runtime and recovery
+guide](docs/user-guides/maintained-fork.md) before adopting it; validation fixtures are not production
+sidecar recommendations.
+
 ### Prerequisites
 
 - [Docker](https://docs.docker.com/get-docker/) and [Docker Compose](https://docs.docker.com/compose/install/)
@@ -80,7 +84,7 @@ Open Archiver is built on a modern, scalable, and maintainable technology stack:
 1.  **Clone the repository:**
 
     ```bash
-    git clone https://github.com/LogicLabs-OU/OpenArchiver.git
+    git clone https://github.com/DevSecNinja/OpenArchiver.git
     cd OpenArchiver
     ```
 
@@ -96,10 +100,10 @@ Open Archiver is built on a modern, scalable, and maintainable technology stack:
 3.  **Run the application:**
 
     ```bash
-    docker compose up -d
+    docker compose up -d --build
     ```
 
-    This command will pull the pre-built Docker images and start all the services (frontend, backend, database, etc.) in the background.
+    This command builds the application locally, pulls the sidecar images, and starts the services in the background.
 
 4.  **Access the application:**
     Once the services are running, you can access the Open Archiver web interface by navigating to `http://localhost:3000` in your web browser.
