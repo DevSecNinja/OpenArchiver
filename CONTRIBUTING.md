@@ -101,6 +101,35 @@ When changing this toolchain, run `pnpm --filter @open-archiver/backend update x
 twice, checking that the recorded checksum survives each operation and that no unrelated dependency
 resolutions or integrity values change, then repeat the frozen install and OSS source build.
 
+### Backend authorization and HTTP regression checks
+
+After a locked install with the repository's declared pnpm version, rebuild and run these focused
+checks from the repository root:
+
+```sh
+pnpm install --frozen-lockfile
+pnpm build:oss
+node --test packages/backend/test/authorization-dependencies.test.cjs packages/backend/test/http-dependencies.test.cjs
+pnpm --filter @open-archiver/backend list @casl/ability axios express express-rate-limit express-validator --depth 0
+```
+
+The authorization tests load the compiled `createAbilityFor` and mailbox-condition normalization
+code. They check individual ingestion and archive instances, source/mailbox allow and deny rules,
+default denial, and administrator access. Storage downloads use archive permissions, not a separate
+storage subject; these tests cover the policy decision, not the database-backed storage-path lookup
+or authentication middleware.
+
+The HTTP tests bind an ephemeral loopback port and exercise Express JSON parsing and async errors,
+Axios redirects/streaming/error responses, request validation, and rate-limit responses/headers.
+They use synthetic routes rather than the application server and disable Axios proxy discovery.
+Axios and express-validator are declared dependencies but currently have no direct backend source
+imports; their fixtures check package compatibility, not live connector behavior. No database,
+mailbox credentials, Redis, search service, or cloud resources are needed for these focused tests.
+
+Record the resolved versions from the rebuilt installation alongside any audit/scan findings in
+the dependency PR. A passing fixture or dependency inventory does not establish that the full
+artifact is free of vulnerabilities.
+
 ## Contributor License Agreement
 
 By submitting a pull request to this repository, you agree to the terms and conditions of our [Contributor License Agreement](./.github/CLA.md)
