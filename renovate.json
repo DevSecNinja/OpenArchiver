@@ -1,0 +1,48 @@
+{
+	"$schema": "https://docs.renovatebot.com/renovate-schema.json",
+	"extends": ["config:recommended", "helpers:pinGitHubActionDigests"],
+	"forkProcessing": "enabled",
+	"enabledManagers": ["npm", "dockerfile", "docker-compose", "github-actions"],
+	"rangeStrategy": "bump",
+	"automerge": false,
+	"prHourlyLimit": 2,
+	"prConcurrentLimit": 4,
+	"branchConcurrentLimit": 4,
+	"minimumReleaseAge": "3 days",
+	"packageRules": [
+		{
+			"matchPackageNames": [
+				"@casl/ability",
+				"axios",
+				"express",
+				"express-rate-limit",
+				"express-validator"
+			],
+			"matchUpdateTypes": ["minor", "patch"],
+			"groupName": "HTTP and authorization non-major dependencies"
+		},
+		{
+			"matchPackageNames": ["mailparser", "yauzl", "multer"],
+			"matchUpdateTypes": ["minor", "patch"],
+			"groupName": "mail and upload non-major dependencies"
+		},
+		{
+			"matchPackageNames": ["@sveltejs/**", "svelte", "vite"],
+			"matchUpdateTypes": ["minor", "patch"],
+			"groupName": "SvelteKit non-major dependencies"
+		},
+		{
+			"matchManagers": ["github-actions"],
+			"matchUpdateTypes": ["minor", "patch", "digest", "pinDigest"],
+			"groupName": "GitHub Actions non-major updates"
+		},
+		{
+			"matchDatasources": ["docker"],
+			"pinDigests": true
+		},
+		{
+			"matchUpdateTypes": ["major"],
+			"dependencyDashboardApproval": true
+		}
+	]
+}
