@@ -69,9 +69,9 @@ pnpm install --frozen-lockfile
 pnpm build:oss
 ```
 
-`pnpm-workspace.yaml` allows only the previously approved `esbuild` dependency scripts. The other
-listed builds remain denied, including `sqlite3`; this toolchain change does not repair native SQLite
-runtime support. `verifyDepsBeforeRun: false` preserves explicit installation: `pnpm run` and
+`pnpm-workspace.yaml` allows the `esbuild` and `sqlite3` dependency scripts. The SQLite installer
+must install a working native binding during dependency installation; other listed builds remain
+denied. `verifyDepsBeforeRun: false` preserves explicit installation: `pnpm run` and
 `pnpm exec` must not install dependencies implicitly.
 
 `minimumReleaseAgeStrict: true` makes pnpm reject unattended updates when no requested version meets
@@ -100,6 +100,44 @@ pnpm 10.34.6 can discard tarball integrity on update. See
 When changing this toolchain, run `pnpm --filter @open-archiver/backend update xlsx --lockfile-only`
 twice, checking that the recorded checksum survives each operation and that no unrelated dependency
 resolutions or integrity values change, then repeat the frozen install and OSS source build.
+
+### SQLite native dependency regression checks
+
+After the clean frozen install and OSS build above, run on Linux with Node.js 22:
+
+```sh
+pnpm --filter @open-archiver/backend test:native
+```
+
+These built-in `node:test` fixtures also run in `pnpm test:oss`. They load the real native binding
+(missing bindings fail, not skip), exercise in-memory create/write/query/update/constraint/close
+operations, and verify closed database reopen, integrity and file restore. They also use the compiled
+`EMLConnector` with a synthetic EML ZIP, both attachment-preservation modes, and encrypted local
+storage. Raw EML bytes and SHA-256 hashes must survive an isolated storage-directory backup and
+restore. No mailbox, cloud, API or PostgreSQL credentials are needed. The EML connector currently
+has no SQLite cache API; these are separate native and connector/storage checks, not a substitute
+for application ingestion, indexing and paired PostgreSQL/object-storage restore. They do not cover
+PST imports or untested architectures.
+
+Validate source fallback separately in a disposable Alpine Node.js 22 build environment containing
+Python 3, make, g++, and the image's Node headers under `/usr/local/include/node`. Install development
+dependencies explicitly (`pnpm install --frozen-lockfile --prod=false --store-dir=/pnpm/store`), build
+OSS, then disable network access and force the native source rebuild:
+
+```sh
+NODE_ENV=development npm_config_build_from_source=true npm_config_nodedir=/usr/local \
+  PNPM_CONFIG_SIDE_EFFECTS_CACHE=false \
+  pnpm --recursive --include-workspace-root --store-dir=/pnpm/store rebuild sqlite3
+pnpm --filter @open-archiver/backend test:native
+```
+
+Keep the same store directory for install and rebuild, include all workspaces and the workspace root,
+and keep development/production mode explicit. A backend-filtered pnpm rebuild can prune other
+workspace links. Preserve installer/compiler failures; do not ignore scripts, replace SQLite with a
+mock, download packages at startup, or add transitive overrides or release-age exceptions. Record the
+actual installed sqlite3/node-gyp/tar versions and `sqlite_version()` for the exact artifact tested;
+the wrapper version alone does not establish its embedded SQLite version or resolve every tar
+advisory elsewhere in the dependency graph.
 
 ### Backend authorization and HTTP regression checks
 
@@ -188,25 +226,26 @@ real compiled `createAbilityFor` function and installed CASL dependency; build f
 source changes. The runner discovers both CommonJS (`*.test.cjs`) and ESM (`*.test.mjs`) tests under
 `packages/backend/test`. Its synthetic policy/subject fixtures cover default denial, mailbox and source
 boundaries, action isolation, explicit denial, no implicit ingestion-to-archive grants, and administrator
-wildcards. No real mailboxes, mail contents, attachments, or cloud credentials are used.
+wildcards. The native SQLite and EML connector/storage fixtures described above are discovered by
+the same runner. No real mailboxes, mail contents, attachments, or cloud credentials are used.
 The same runner also discovers the focused HTTP and PostgreSQL storage authorization checks described
 above. CI supplies the isolated PostgreSQL service; local database coverage requires the explicit test URL.
 
 ### Coverage limits and follow-up work
 
-This is a build and policy/HTTP/storage-authorization regression gate, not end-to-end archive validation.
+This is a build and focused regression gate, not end-to-end archive validation.
 It does not establish authentication/session behavior, all policy interpolation or database filtering,
-ingestion, MIME or attachment parsing, indexing/search, export, deletion, or matching database/archive
-restoration.
+application ingestion, general MIME or attachment compatibility, indexing/search, export, deletion,
+or matching database/archive restoration.
 The policy tests import the compiled policy module, HTTP checks use synthetic loopback fixtures, and
 storage checks call the compiled service with isolated database rows, not the application entry point.
 
-Only `esbuild` is approved in `pnpm-workspace.yaml` `allowBuilds`, and `sqlite3` is explicitly denied,
-so a normal locked installation does not build the SQLite native binding. A passing source build does not prove that
-SQLite or the production application can start. Native-module checks, image builds, non-root startup,
-migrations, synthetic ingestion/search, and restore integration coverage belong to
-[issue #2](https://github.com/DevSecNinja/OpenArchiver/issues/2). Do not bypass native checks or treat
-this workflow as evidence that the runtime gap is fixed.
+`esbuild` and `sqlite3` are approved in `pnpm-workspace.yaml` `allowBuilds`; SQLite regression tests
+require its native binding. A passing source build and these fixtures do not prove that the production
+application can start. Image builds, non-root startup, migrations, synthetic application ingestion/search,
+and paired restore integration coverage belong to
+[issue #2](https://github.com/DevSecNinja/OpenArchiver/issues/2). Do not treat this workflow as
+evidence that the separate production runtime-layout gap is fixed.
 
 The frontend build is not a standalone `svelte-check` pass; full frontend type and behavior validation
 belongs to [issue #6](https://github.com/DevSecNinja/OpenArchiver/issues/6). This baseline also does not
