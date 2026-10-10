@@ -29,6 +29,34 @@ If you have an idea for an enhancement, please open an issue to discuss it. This
 6.  **Update the documentation** if your changes require it.
 7.  **Submit a pull request** to the `main` branch of the main repository. Please provide a clear description of the problem and solution. Include the relevant issue number if applicable.
 
+## Maintaining dependencies in this fork
+
+`renovate.json` covers workspace packages and the pnpm lockfile, Docker/Compose images, and GitHub
+Actions. It enables fork processing, leaves automerge disabled, limits concurrent PRs to four, and
+requires dashboard approval for major updates. HTTP/authorization, mail/upload, and SvelteKit
+non-major updates are separate groups; do not combine unrelated fixes into one maintenance PR.
+
+Validate configuration changes with:
+
+```sh
+npx --yes --package=renovate@44.149.2 renovate-config-validator --strict renovate.json
+```
+
+For a non-writing inventory, set `RENOVATE_CONFIG_FILE=renovate.json` in the environment and run
+the same Renovate version with `--platform=local --dry-run=lookup --onboarding=false`.
+GitHub Actions lookups require an authorized GitHub token. Docker Hub anonymous pagination limits may
+leave image lookups incomplete; a missing proposal does not prove that an image is current.
+
+The operator confirmed Mend Renovate access and enablement on 2026-10-10. This was not independently
+confirmed by the available GitHub token, whose App-installation lookups were denied. After the
+configuration lands on the default branch, verify a successful, non-silent repository job in the
+[Mend portal](https://developer.mend.io/). Configuration validation and local lookups do not prove that
+the hosted bot is operational. See [Mend's fork processing and onboarding documentation](https://docs.renovatebot.com/mend-hosted/hosted-apps-config/).
+
+Dependency PRs must include source rebuilds and relevant regression results, not only lockfile
+changes or a package-manager audit. Keep upstream synchronization manual and reviewed, preserving
+fork patches. Do not use Renovate to automatically merge upstream commits.
+
 ## Contributor License Agreement
 
 By submitting a pull request to this repository, you agree to the terms and conditions of our [Contributor License Agreement](./.github/CLA.md)
