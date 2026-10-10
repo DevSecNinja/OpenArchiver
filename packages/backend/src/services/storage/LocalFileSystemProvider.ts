@@ -6,6 +6,7 @@ import { createReadStream, createWriteStream } from 'fs';
 import { pipeline } from 'stream/promises';
 import { logger } from '../../config/logger';
 import { StorageObjectExistsError } from './errors';
+import { assertSafeRelativePath, UnsafePathError } from '../../helpers/relativePath';
 
 /** Errors from link(2) that mean "this filesystem has no usable hard links". */
 const LINK_UNSUPPORTED = new Set(['EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'EXDEV', 'ENOSYS']);
@@ -16,7 +17,34 @@ export class LocalFileSystemProvider implements IStorageProvider {
 	private linkUnsupported = false;
 
 	constructor(config: LocalStorageConfig) {
-		this.rootPath = config.rootPath;
+		this.rootPath = path.resolve(config.rootPath);
+	}
+
+	private async resolvePath(filePath: string): Promise<string> {
+		assertSafeRelativePath(filePath);
+		const fullPath = path.resolve(this.rootPath, filePath);
+		const relative = path.relative(this.rootPath, fullPath);
+		if (!relative || path.isAbsolute(relative) || relative.split(path.sep).includes('..')) {
+			throw new UnsafePathError();
+		}
+
+		// The configured root is trusted. Reject links below it, including links into
+		// another source. This check does not prevent concurrent filesystem mutation.
+		let current = this.rootPath;
+		for (const part of relative.split(path.sep)) {
+			current = path.join(current, part);
+			try {
+				if ((await fs.lstat(current)).isSymbolicLink()) {
+					throw new UnsafePathError();
+				}
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+					break;
+				}
+				throw error;
+			}
+		}
+		return fullPath;
 	}
 
 	async put(
@@ -24,9 +52,10 @@ export class LocalFileSystemProvider implements IStorageProvider {
 		content: Buffer | NodeJS.ReadableStream,
 		options?: StoragePutOptions
 	): Promise<void> {
-		const fullPath = path.join(this.rootPath, filePath);
+		const fullPath = await this.resolvePath(filePath);
 		const dir = path.dirname(fullPath);
 		await fs.mkdir(dir, { recursive: true });
+		await this.resolvePath(filePath);
 
 		if (options?.overwrite === false) {
 			return this.putIfAbsent(filePath, fullPath, dir, content);
@@ -129,12 +158,14 @@ export class LocalFileSystemProvider implements IStorageProvider {
 		);
 
 		for (const candidate of candidates) {
-			const fullPath = path.join(this.rootPath, candidate);
+			const fullPath = await this.resolvePath(candidate);
 			try {
 				await fs.access(fullPath);
 				return fullPath;
-			} catch {
-				// Try the next normalization form.
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+					throw error;
+				}
 			}
 		}
 
@@ -153,15 +184,8 @@ export class LocalFileSystemProvider implements IStorageProvider {
 		// Fall back to the exact path when unresolved so a missing file stays a no-op
 		// (rm with force: true ignores ENOENT).
 		const fullPath =
-			(await this.resolveExistingPath(filePath)) ?? path.join(this.rootPath, filePath);
-		try {
-			await fs.rm(fullPath, { recursive: true, force: true });
-		} catch (error: any) {
-			// Even with force: true, other errors might occur (e.g., permissions)
-			if (error.code !== 'ENOENT') {
-				throw error;
-			}
-		}
+			(await this.resolveExistingPath(filePath)) ?? (await this.resolvePath(filePath));
+		await fs.rm(fullPath, { recursive: true, force: true });
 	}
 
 	async exists(filePath: string): Promise<boolean> {

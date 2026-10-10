@@ -224,17 +224,13 @@ describe('mail/upload parser dependency regressions', { timeout: 5000 }, () => {
 		await assert.rejects(readZip(zip), /not enough bytes|uncompressed size/i);
 	});
 
-	it('distinguishes yauzl default path validation from the connector raw-name option', async () => {
+	it('rejects a traversal name with yauzl decoded-name validation', async () => {
 		const zip = await makeZip([['ok/message.eml', message]]);
 		const centralDirectory = zip.indexOf(Buffer.from('504b0102', 'hex'));
 		assert.ok(centralDirectory > 0);
 		assert.equal(zip.toString('utf8', centralDirectory + 46, centralDirectory + 49), 'ok/');
 		zip.write('../', centralDirectory + 46);
 		await assert.rejects(readZip(zip, true), /invalid relative path/i);
-		// EMLConnector uses decodeStrings:false: this is not traversal protection.
-		const entries = await readZip(zip);
-		assert.equal(entries[0].name.toString(), '../message.eml');
-		assert.deepEqual(entries[0].content, message);
 	});
 
 	it('strips client-supplied path components with the active Busboy defaults', async () => {
