@@ -101,6 +101,38 @@ When changing this toolchain, run `pnpm --filter @open-archiver/backend update x
 twice, checking that the recorded checksum survives each operation and that no unrelated dependency
 resolutions or integrity values change, then repeat the frozen install and OSS source build.
 
+### Mail/upload parser regressions
+
+After the explicit frozen install above, run the bounded, synthetic parser tests with Node.js 22:
+
+```sh
+pnpm --filter @open-archiver/backend exec node --test --test-timeout=30000 test/mail-upload-parsers.test.cjs
+```
+
+These built-in `node:test` checks use the existing parser dependencies, not a new test framework.
+They need no API server, database, native SQLite binding, external services, mail credentials, or real
+mailbox data. Fixtures are generated in memory with small binary attachments and ZIP payloads.
+
+The suite passes multipart bytes through **Busboy**, ZIP entries through **yauzl** with the
+connector's `lazyEntries: true, decodeStrings: false` options, and MIME bytes through **mailparser**.
+It checks nested entry names, raw bytes/SHA-256, attachment bytes, repeated reads, invalid/truncated
+ZIP and multipart data, MIME stream errors, and an explicit HTML-to-text limit. MIME parsing is
+deliberately lenient: a missing final MIME boundary can still yield complete attachment content;
+it is not a strict MIME validator. With `decodeStrings: false`, yauzl does not automatically reject
+unsafe entry names; the suite distinguishes that behavior from its default decoded-name validation.
+These checks do not establish application-level path containment or a total archive-size limit.
+
+The upload controller uses Busboy directly. The separate Multer memory-upload/size-limit smoke test
+checks a declared dependency only, not the production upload route. Neither its test size limit nor
+the mailparser HTML test limit changes the controller/connector configuration.
+
+These are parser/protocol regressions, **not full ingestion or restore tests**. Repeated parsing does
+not prove database deduplication, retries, or concurrent-writer integrity. Keep source-build results,
+the installed dependency graph/advisory inventory, and any actual ingestion, retrieval, encrypted
+storage, indexing, deduplication, and matching database/archive restore evidence separate in the PR.
+Preserve-original mode intentionally stores attachments inside the raw EML without separate
+attachment rows. No PST import coverage is implied by these synthetic EML/ZIP fixtures.
+
 ## Contributor License Agreement
 
 By submitting a pull request to this repository, you agree to the terms and conditions of our [Contributor License Agreement](./.github/CLA.md)

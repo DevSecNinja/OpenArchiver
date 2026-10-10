@@ -54,10 +54,10 @@
 		"imapflow": "^1.0.191",
 		"ioredis": "^5.10.1",
 		"jose": "^6.0.11",
-		"mailparser": "^3.7.4",
+		"mailparser": "^3.9.36",
 		"mammoth": "^1.9.1",
 		"meilisearch": "^0.51.0",
-		"multer": "^2.0.2",
+		"multer": "^2.4.0",
 		"nodemailer": "^8.0.2",
 		"otplib": "^13.4.0",
 		"pdf2json": "^3.1.6",
@@ -70,7 +70,7 @@
 		"reflect-metadata": "^0.2.2",
 		"sqlite3": "^5.1.7",
 		"xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
-		"yauzl": "^3.2.0",
+		"yauzl": "^3.4.0",
 		"zod": "^4.1.5"
 	},
 	"devDependencies": {
