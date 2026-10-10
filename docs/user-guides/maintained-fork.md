@@ -94,7 +94,9 @@ pnpm test:integration
 For Podman, set `CONTAINER_ENGINE=podman`; `TEST_IMAGE` selects the locally built image.
 The integration driver uses an internal, unexposed network, unique resource names, synthetic
 credentials and a generated EML-in-ZIP with an attachment. It removes only resources it created.
-`docker/compose.test.yml` pins test sidecars independently of production defaults.
+`docker/compose.test.yml` pins test sidecars independently of production defaults. The Node base and
+test sidecars pin multi-platform OCI indexes, not individual amd64 manifests. Each selected index
+retains the original tested amd64 child and also supplies a native arm64 child.
 
 Excluding host `dist` without excluding `*.tsbuildinfo` lets TypeScript skip needed output. Both
 incremental metadata and nested host `node_modules` are excluded, with build assertions and CI
@@ -121,8 +123,8 @@ five runtime tests, six inherited OSS policy tests, and the complete fixture abo
 5.8.6, Linux amd64. The final image ID was
 `sha256:d53b694c40a6aacf9e3cac73d0be4c09d026094d8bfbd1bfa6d7685cf1356a8d`.
 The image build also passed the host-contamination assertions, runtime tests, and final-user native
-SQLite/concurrently checks. CI defines native amd64 and arm64 checks; ARM64 has not yet been run.
-No deployment, hosted CI success, or upstream image publication is claimed.
+SQLite/concurrently checks. Hosted CI reports native amd64 and arm64 results separately; this local
+result does not establish ARM64 success. No deployment or upstream image publication is claimed.
 
 Image build/test success is not a vulnerability clearance. Scan the exact built image, retain its
 image ID/digest and scanner database date, and separate installed packages from reachable behavior.
