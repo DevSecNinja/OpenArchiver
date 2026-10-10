@@ -40,14 +40,9 @@
 		"vitepress": "^1.6.4",
 		"vitepress-openapi": "^0.1.18"
 	},
-	"packageManager": "pnpm@10.13.1",
+	"packageManager": "pnpm@12.10.1",
 	"engines": {
 		"node": ">=22.0.0",
-		"pnpm": "10.13.1"
-	},
-	"pnpm": {
-		"onlyBuiltDependencies": [
-			"esbuild"
-		]
+		"pnpm": "12.10.1"
 	}
 }

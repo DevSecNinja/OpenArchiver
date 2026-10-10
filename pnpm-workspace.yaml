@@ -2,3 +2,16 @@
 packages:
     - 'packages/*'
     - 'apps/*'
+
+allowBuilds:
+    '@tailwindcss/oxide': false
+    esbuild: true
+    msgpackr-extract: false
+    sqlite3: false
+    vue-demi: false
+
+# Keep run/exec from implicitly installing dependencies.
+verifyDepsBeforeRun: false
+
+# Reject too-new releases instead of recording automatic age-policy exceptions.
+minimumReleaseAgeStrict: true
