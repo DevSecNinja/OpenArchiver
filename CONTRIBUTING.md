@@ -117,7 +117,7 @@ The authorization tests load the compiled `createAbilityFor` and mailbox-conditi
 code. They check individual ingestion and archive instances, source/mailbox allow and deny rules,
 default denial, and administrator access. Storage downloads use archive permissions, not a separate
 storage subject; these tests cover the policy decision, not the database-backed storage-path lookup
-or authentication middleware.
+or authentication middleware. The PostgreSQL-backed storage checks below cover the separate lookup.
 
 The HTTP tests bind an ephemeral loopback port and exercise Express JSON parsing and async errors,
 Axios redirects/streaming/error responses, request validation, and rate-limit responses/headers.
@@ -131,6 +131,35 @@ mailbox credentials, Redis, search service, or cloud resources are needed for th
 Record the resolved versions from the rebuilt installation alongside any audit/scan findings in
 the dependency PR. A passing fixture or dependency inventory does not establish that the full
 artifact is free of vulnerabilities.
+
+### PostgreSQL storage authorization checks
+
+`storage-authorization.test.cjs` calls the compiled `ArchivedEmailService.canAccessStoragePath`
+against a real PostgreSQL database. It exercises the email query, attachment lookup and carrier-email
+query through the real IAM service, CASL rules, filter builder and SQL translator. Cases include both
+source/mailbox boundaries, normalized addresses, explicit denial, read versus search permission,
+administrator access, shared attachments and missing/unreferenced files.
+
+For local execution, start a disposable PostgreSQL 17 server on loopback with a dedicated test role
+allowed to create databases. Use only test credentials; do not point these checks at an application
+database. After the OSS build, set the explicit test URL and run:
+
+```sh
+STORAGE_AUTH_TEST_DATABASE_URL='postgresql://storage_test:storage_test@127.0.0.1:5432/postgres' \
+  node --test packages/backend/test/storage-authorization.test.cjs
+```
+
+The fixture accepts only a loopback `/postgres` maintenance URL, creates a uniquely named database,
+applies the committed migrations, inserts synthetic records and drops only its own database afterward.
+It never reads `DATABASE_URL` or real provider credentials. The connection export is replaced with
+a real Drizzle/PostgreSQL connection to that database; no authorization, filter or query result is
+mocked. Unrelated ingestion, storage I/O, search and deletion entry points are blocked with
+fail-on-use test doubles to avoid starting provider, queue or native-SQLite dependencies.
+
+Without the explicit test URL this check is marked skipped locally; in CI a missing URL fails.
+The OSS validation job supplies an ephemeral PostgreSQL service and test-only credentials, so this
+coverage runs with `pnpm test:oss`. These are service/database authorization tests, not download-route,
+filesystem containment, authentication or full archive end-to-end tests.
 
 ## OSS validation in this fork
 
@@ -160,15 +189,17 @@ source changes. The runner discovers both CommonJS (`*.test.cjs`) and ESM (`*.te
 `packages/backend/test`. Its synthetic policy/subject fixtures cover default denial, mailbox and source
 boundaries, action isolation, explicit denial, no implicit ingestion-to-archive grants, and administrator
 wildcards. No real mailboxes, mail contents, attachments, or cloud credentials are used.
-The same runner also discovers the focused HTTP dependency checks described above.
+The same runner also discovers the focused HTTP and PostgreSQL storage authorization checks described
+above. CI supplies the isolated PostgreSQL service; local database coverage requires the explicit test URL.
 
 ### Coverage limits and follow-up work
 
-This is a build and policy/HTTP regression gate, not end-to-end archive validation. It does not establish
-authentication/session behavior, policy interpolation or database query filtering, ingestion, MIME or
-attachment parsing, indexing/search, export, deletion, or matching database/archive restoration.
-The policy tests import the compiled policy module and the HTTP checks use synthetic loopback fixtures,
-not the application entry point.
+This is a build and policy/HTTP/storage-authorization regression gate, not end-to-end archive validation.
+It does not establish authentication/session behavior, all policy interpolation or database filtering,
+ingestion, MIME or attachment parsing, indexing/search, export, deletion, or matching database/archive
+restoration.
+The policy tests import the compiled policy module, HTTP checks use synthetic loopback fixtures, and
+storage checks call the compiled service with isolated database rows, not the application entry point.
 
 Only `esbuild` is approved in `pnpm-workspace.yaml` `allowBuilds`, and `sqlite3` is explicitly denied,
 so a normal locked installation does not build the SQLite native binding. A passing source build does not prove that
