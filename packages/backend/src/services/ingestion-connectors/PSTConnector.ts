@@ -131,6 +131,16 @@ const JUNK_FOLDERS = new Set([
 ]);
 
 export class PSTConnector implements IEmailConnector {
+	private fetchFailures = { count: 0, samples: [] as string[] };
+
+	public getFetchFailures() {
+		return this.fetchFailures;
+	}
+
+	private recordFetchFailure(message: string): void {
+		this.fetchFailures.count++;
+		if (this.fetchFailures.samples.length < 5) this.fetchFailures.samples.push(message);
+	}
 	private storage: StorageService;
 	private options: ConnectorOptions;
 	/**
@@ -367,16 +377,6 @@ export class PSTConnector implements IEmailConnector {
 			if (tempDir) {
 				await fs.rm(tempDir, { recursive: true, force: true });
 			}
-			if (this.credentials.uploadedFilePath && !this.credentials.localFilePath) {
-				try {
-					await this.storage.delete(this.credentials.uploadedFilePath);
-				} catch (error) {
-					logger.error(
-						{ error, file: this.credentials.uploadedFilePath },
-						'Failed to delete PST file after processing.'
-					);
-				}
-			}
 		}
 	}
 
@@ -400,6 +400,7 @@ export class PSTConnector implements IEmailConnector {
 				try {
 					email = folder.getNextChild();
 				} catch (error) {
+					this.recordFetchFailure('A PST folder could not be read completely');
 					logger.warn(
 						{ folder: folder.displayName, error },
 						"Folder doesn't have child or failed to read next child."
@@ -599,7 +600,7 @@ export class PSTConnector implements IEmailConnector {
 					const attachment = msg.getAttachment(i);
 					const attachmentStream = attachment.fileInputStream;
 					if (!attachmentStream) {
-						continue;
+						throw new Error('PST attachment has no readable content stream');
 					}
 					const attachmentBuffer = Buffer.alloc(attachment.filesize);
 					attachmentStream.readCompletely(attachmentBuffer);
@@ -622,8 +623,9 @@ export class PSTConnector implements IEmailConnector {
 					part += this.toBase64Lines(attachmentBuffer);
 					attachmentParts.push(part);
 				} catch (error) {
-					// A single corrupt attachment should not lose the whole email.
-					logger.warn({ error }, 'Skipping unreadable PST attachment');
+					this.recordFetchFailure('A PST attachment could not be read');
+					logger.error({ error }, 'Refusing to publish an incomplete PST message');
+					throw error;
 				}
 			}
 		}

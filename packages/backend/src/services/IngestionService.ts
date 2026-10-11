@@ -12,11 +12,13 @@ import type {
 } from '@open-archiver/types';
 import {
 	and,
+	asc,
 	count,
 	countDistinct,
 	desc,
 	eq,
 	gte,
+	gt,
 	inArray,
 	max,
 	min,
@@ -45,11 +47,20 @@ import { stripAttachmentsFromEml } from '../helpers/emlUtils';
 import { streamToBuffer } from '../helpers/streamToBuffer';
 import { isStorageObjectExistsError } from './storage/errors';
 import {
+	cleanupUnreferencedObjects,
+	referencedReceiptInputs,
+	storagePathIdentity,
+	storagePathLockKey,
+	withStorageLocks,
+	withStoragePurgeLock,
+} from './storage/locking';
+import {
 	archivedEmails,
 	attachments as attachmentsSchema,
 	emailAttachments,
+	syncSessions,
 } from '../database/schema';
-import { createHash, randomUUID } from 'crypto';
+import { createHash } from 'crypto';
 import { readFile, unlink } from 'fs/promises';
 import { logger } from '../config/logger';
 import { SearchService } from './SearchService';
@@ -62,6 +73,11 @@ import { normalizeEmailAddress } from '../helpers/emailAddress';
 import { mapWithConcurrency } from '../helpers/mapWithConcurrency';
 import { truncateToBytes } from '../helpers/truncateToBytes';
 import { assertSafeRelativePath } from '../helpers/relativePath';
+import {
+	readUploadReceipt,
+	uploadReceiptSuccessful,
+	uploadedInputPath,
+} from '../helpers/uploadCompletion';
 import { quoteMeiliString } from '../helpers/meiliFilter';
 import { isIndexingWorkerAlive } from '../jobs/helpers/workerLiveness';
 import { buildReindexWhere } from '../jobs/helpers/indexBacklog';
@@ -180,6 +196,209 @@ export class IngestionService {
 		return ['pst_import', 'eml_import', 'mbox_import'];
 	}
 
+	private static pendingUploadPath(credentials: unknown): string | undefined {
+		if (!credentials || typeof credentials !== 'object' || !('type' in credentials)) return;
+		if (
+			credentials.type !== 'pst_import' &&
+			credentials.type !== 'eml_import' &&
+			credentials.type !== 'mbox_import'
+		)
+			return;
+		if ('uploadedFilePath' in credentials && typeof credentials.uploadedFilePath === 'string') {
+			return credentials.uploadedFilePath || undefined;
+		}
+	}
+
+	private static pendingUploadFromRow(
+		row: typeof ingestionSources.$inferSelect
+	): string | undefined {
+		if (!row.credentials) return;
+		const credentials = CryptoService.decryptObject<IngestionCredentials>(row.credentials);
+		if (!credentials)
+			throw new Error(`Cannot verify pending upload references for source ${row.id}`);
+		return this.pendingUploadPath(credentials);
+	}
+
+	private static async protectUploadReference<T>(
+		next: string | undefined,
+		previous: string | undefined,
+		persist: (tx: Database) => Promise<T>
+	): Promise<T> {
+		const paths = [next, previous].filter((path): path is string => Boolean(path));
+		if (paths.length === 0) return persist(db);
+		return withStorageLocks(paths.map(storagePathLockKey), async (tx) => {
+			return {
+				keys: [],
+				run: async () => {
+					if (next && next !== previous && !(await new StorageService().exists(next))) {
+						throw new Error(
+							'Uploaded import file is missing; upload it again before selecting it'
+						);
+					}
+					return persist(tx);
+				},
+			};
+		});
+	}
+
+	private static async referencedUploads(
+		tx: Database,
+		candidates: readonly string[],
+		prefix = false
+	): Promise<string[]> {
+		if (candidates.length === 0) return [];
+		const found = new Set<string>(await referencedReceiptInputs(tx, candidates, prefix));
+		let cursor: string | undefined;
+		for (;;) {
+			const rows = await tx
+				.select()
+				.from(ingestionSources)
+				.where(
+					and(
+						inArray(ingestionSources.provider, this.returnFileBasedIngestions()),
+						cursor ? gt(ingestionSources.id, cursor) : undefined
+					)
+				)
+				.orderBy(asc(ingestionSources.id))
+				.limit(100);
+			for (const row of rows) {
+				const path = this.pendingUploadFromRow(row);
+				if (!path) continue;
+				const identity = storagePathIdentity(path);
+				for (const candidate of candidates) {
+					if (
+						prefix
+							? identity.startsWith(storagePathIdentity(candidate))
+							: identity === storagePathIdentity(candidate)
+					) {
+						found.add(candidate);
+					}
+				}
+			}
+			if (rows.length < 100 || found.size === candidates.length) return [...found];
+			cursor = rows[rows.length - 1].id;
+		}
+	}
+
+	public static async releaseCompletedUpload(sessionId: string): Promise<boolean> {
+		const [session] = await db
+			.select()
+			.from(syncSessions)
+			.where(eq(syncSessions.id, sessionId));
+		const initial = readUploadReceipt(session?.uploadReceipt);
+		if (
+			!session ||
+			!initial ||
+			initial.sourceId !== session.ingestionSourceId ||
+			initial.expectedMailboxes.length !== session.totalMailboxes ||
+			!uploadReceiptSuccessful(initial)
+		)
+			return false;
+		if (initial.disposition === 'handled') return true;
+		const released = await withStorageLocks(
+			[storagePathLockKey(initial.inputPath)],
+			async (tx) => {
+				const [source] = await tx
+					.select()
+					.from(ingestionSources)
+					.where(eq(ingestionSources.id, initial.sourceId))
+					.for('update');
+				const sessions = await tx
+					.select()
+					.from(syncSessions)
+					.where(eq(syncSessions.ingestionSourceId, initial.sourceId))
+					.for('update');
+				const current = sessions.find((row) => row.id === sessionId);
+				const receipt = readUploadReceipt(current?.uploadReceipt);
+				const credentials = source?.credentials
+					? CryptoService.decryptObject<IngestionCredentials>(source.credentials)
+					: null;
+				if (
+					!source ||
+					!credentials ||
+					!current ||
+					!receipt ||
+					receipt.sourceId !== current.ingestionSourceId ||
+					receipt.inputPath !== initial.inputPath ||
+					receipt.expectedMailboxes.length !== current.totalMailboxes ||
+					!uploadReceiptSuccessful(receipt)
+				)
+					return { keys: [], run: async () => false };
+				if (receipt.disposition === 'handled') {
+					return { keys: [], run: async () => false };
+				}
+				const matchesCurrentInput = uploadedInputPath(credentials) === receipt.inputPath;
+				if (
+					matchesCurrentInput &&
+					(source.status === 'paused' || source.status === 'error')
+				) {
+					return { keys: [], run: async () => false };
+				}
+				const otherInputNeeded = sessions.some((row) => {
+					if (row.id === sessionId) return false;
+					const other = readUploadReceipt(row.uploadReceipt);
+					return (
+						!other ||
+						other.sourceId !== row.ingestionSourceId ||
+						other.expectedMailboxes.length !== row.totalMailboxes ||
+						(other.inputPath === receipt.inputPath && !uploadReceiptSuccessful(other))
+					);
+				});
+				if (otherInputNeeded) return { keys: [], run: async () => false };
+				return {
+					keys: [],
+					run: async () => {
+						// Keep display/original-name metadata, but consumed inputs no longer count as pending references.
+						if (matchesCurrentInput) {
+							const updated = { ...credentials };
+							if ('uploadedFilePath' in updated) delete updated.uploadedFilePath;
+							await tx
+								.update(ingestionSources)
+								.set({
+									credentials: CryptoService.encryptObject(updated),
+								})
+								.where(eq(ingestionSources.id, source.id));
+						}
+						return true;
+					},
+				};
+			}
+		);
+		if (released) {
+			await cleanupUnreferencedObjects(new StorageService(), [initial.inputPath], (tx) =>
+				this.referencedUploads(tx, [initial.inputPath])
+			);
+			await withStorageLocks([storagePathLockKey(initial.inputPath)], async (tx) => {
+				const [current] = await tx
+					.select()
+					.from(syncSessions)
+					.where(eq(syncSessions.id, sessionId))
+					.for('update');
+				const receipt = readUploadReceipt(current?.uploadReceipt);
+				if (
+					!current ||
+					!receipt ||
+					receipt.inputPath !== initial.inputPath ||
+					receipt.sourceId !== initial.sourceId ||
+					receipt.expectedMailboxes.length !== current.totalMailboxes ||
+					!uploadReceiptSuccessful(receipt)
+				) {
+					throw new Error('Upload receipt changed before recording input disposition');
+				}
+				return {
+					keys: [],
+					run: async () => {
+						await tx
+							.update(syncSessions)
+							.set({ uploadReceipt: { ...receipt, disposition: 'handled' } })
+							.where(eq(syncSessions.id, sessionId));
+					},
+				};
+			});
+		}
+		return released;
+	}
+
 	public static async create(
 		dto: CreateIngestionSourceDto,
 		userId: string,
@@ -216,7 +435,11 @@ export class IngestionService {
 			mergedIntoId: resolvedMergedIntoId ?? null,
 		};
 
-		const [newSource] = await db.insert(ingestionSources).values(valuesToInsert).returning();
+		const [newSource] = await this.protectUploadReference(
+			this.pendingUploadPath(providerConfig),
+			undefined,
+			async (tx) => tx.insert(ingestionSources).values(valuesToInsert).returning()
+		);
 
 		await this.auditService.createAuditLog({
 			actorIdentifier: actor.id,
@@ -401,55 +624,124 @@ export class IngestionService {
 		id: string,
 		dto: UpdateIngestionSourceDto,
 		actor?: User,
-		actorIp?: string
+		actorIp?: string,
+		expectedUploadInput?: string,
+		expectedUploadSessionId?: string
 	): Promise<IngestionSource> {
 		const { providerConfig, ...rest } = dto;
-		const valuesToUpdate: Partial<typeof ingestionSources.$inferInsert> = { ...rest };
-
-		// Get the original source to compare the status later
-		const originalSource = await this.findById(id);
-
-		if (providerConfig) {
-			if (originalSource.provider === 'oauth_mailbox') {
-				// The edit form starts blank (SafeIngestionSource omits credentials), so a
-				// wholesale replace would wipe the tokens on every save. Merge instead:
-				// server-managed fields carry over, a blank clientSecret keeps the stored
-				// one, and only a change to WHO or WHERE to authenticate invalidates the
-				// tokens and sends the source back to pending_auth for re-authorization.
-				const { merged, connectionChanged } = mergeOAuthCredentials(
-					originalSource.credentials as OAuthMailboxCredentials,
-					providerConfig
-				);
-				if (connectionChanged) {
-					const validation = validateOAuthMailboxConfig(merged);
-					if (!validation.ok) {
-						throw new Error(validation.message);
+		// The preflight only seeds lock discovery, never the credentials eventually persisted.
+		const preflight = await this.findById(id);
+		const initialPaths = [
+			this.pendingUploadPath(preflight.credentials),
+			this.pendingUploadPath(providerConfig),
+		].filter((path): path is string => Boolean(path));
+		const { updatedSource, originalSource } = await withStorageLocks(
+			initialPaths.map(storagePathLockKey),
+			async (tx) => {
+				const [fresh] = await tx
+					.select()
+					.from(ingestionSources)
+					.where(eq(ingestionSources.id, id))
+					.for('update');
+				if (!fresh) throw new Error('Ingestion source not found');
+				const originalSource = this.decryptSource(fresh);
+				if (!originalSource) throw new Error('Cannot decrypt current source credentials');
+				if (
+					expectedUploadInput !== undefined &&
+					uploadedInputPath(originalSource.credentials) !== expectedUploadInput
+				) {
+					throw new Error('Upload input changed before status publication');
+				}
+				if (expectedUploadSessionId !== undefined) {
+					const [session] = await tx
+						.select()
+						.from(syncSessions)
+						.where(eq(syncSessions.id, expectedUploadSessionId))
+						.for('update');
+					const receipt = readUploadReceipt(session?.uploadReceipt);
+					if (
+						!session ||
+						!receipt ||
+						receipt.sourceId !== id ||
+						receipt.inputPath !== expectedUploadInput ||
+						receipt.disposition === 'handled' ||
+						receipt.expectedMailboxes.length !== session.totalMailboxes ||
+						receipt.results.length !== receipt.expectedMailboxes.length
+					)
+						throw new Error('Upload receipt changed before status publication');
+				}
+				const valuesToUpdate: Partial<typeof ingestionSources.$inferInsert> = { ...rest };
+				const previous = this.pendingUploadPath(originalSource.credentials);
+				let nextUpload = previous;
+				if (providerConfig) {
+					if (originalSource.provider === 'oauth_mailbox') {
+						// The edit form starts blank (SafeIngestionSource omits credentials), so a
+						// wholesale replace would wipe the tokens on every save. Merge instead:
+						// server-managed fields carry over, a blank clientSecret keeps the stored
+						// one, and only a change to WHO or WHERE to authenticate invalidates the
+						// tokens and sends the source back to pending_auth for re-authorization.
+						const { merged, connectionChanged } = mergeOAuthCredentials(
+							originalSource.credentials as OAuthMailboxCredentials,
+							providerConfig
+						);
+						if (connectionChanged) {
+							const validation = validateOAuthMailboxConfig(merged);
+							if (!validation.ok) {
+								throw new Error(validation.message);
+							}
+							valuesToUpdate.status = 'pending_auth';
+							valuesToUpdate.lastSyncStatusMessage =
+								'Connection settings changed - re-authorization required.';
+						}
+						valuesToUpdate.credentials = CryptoService.encryptObject(merged);
+					} else {
+						// The edit form starts blank for every provider (SafeIngestionSource omits
+						// credentials), so what arrives here is not the new truth — it is whatever
+						// the admin typed over a form that could not show the old values. Merging
+						// keeps stored fields wherever the incoming ones are blank; storing the
+						// incoming object wholesale is how a rename-only edit once wiped a working
+						// Microsoft 365 source down to two IMAP form defaults.
+						const result = mergeProviderCredentials(
+							originalSource.credentials,
+							providerConfig
+						);
+						if (!result.ok) {
+							throw new Error(result.message);
+						}
+						valuesToUpdate.credentials = CryptoService.encryptObject(result.merged);
+						nextUpload = this.pendingUploadPath(result.merged);
 					}
-					valuesToUpdate.status = 'pending_auth';
-					valuesToUpdate.lastSyncStatusMessage =
-						'Connection settings changed - re-authorization required.';
 				}
-				valuesToUpdate.credentials = CryptoService.encryptObject(merged);
-			} else {
-				// The edit form starts blank for every provider (SafeIngestionSource omits
-				// credentials), so what arrives here is not the new truth — it is whatever
-				// the admin typed over a form that could not show the old values. Merging
-				// keeps stored fields wherever the incoming ones are blank; storing the
-				// incoming object wholesale is how a rename-only edit once wiped a working
-				// Microsoft 365 source down to two IMAP form defaults.
-				const result = mergeProviderCredentials(originalSource.credentials, providerConfig);
-				if (!result.ok) {
-					throw new Error(result.message);
-				}
-				valuesToUpdate.credentials = CryptoService.encryptObject(result.merged);
+				return {
+					keys: [previous, nextUpload]
+						.filter((path): path is string => Boolean(path))
+						.map(storagePathLockKey),
+					run: async () => {
+						if (
+							expectedUploadInput !== undefined &&
+							originalSource.status === 'paused'
+						) {
+							return { updatedSource: fresh, originalSource };
+						}
+						if (
+							nextUpload &&
+							nextUpload !== previous &&
+							!(await new StorageService().exists(nextUpload))
+						) {
+							throw new Error(
+								'Uploaded import file is missing; upload it again before selecting it'
+							);
+						}
+						const [updatedSource] = await tx
+							.update(ingestionSources)
+							.set(valuesToUpdate)
+							.where(eq(ingestionSources.id, id))
+							.returning();
+						return { updatedSource, originalSource };
+					},
+				};
 			}
-		}
-
-		const [updatedSource] = await db
-			.update(ingestionSources)
-			.set(valuesToUpdate)
-			.where(eq(ingestionSources.id, id))
-			.returning();
+		);
 
 		if (!updatedSource) {
 			throw new Error('Ingestion source not found');
@@ -592,68 +884,164 @@ export class IngestionService {
 			throw new Error('Ingestion source not found');
 		}
 
-		// If this is a root source with children, delete all children first
-		if (!source.mergedIntoId) {
-			const children = await db
-				.select({ id: ingestionSources.id })
-				.from(ingestionSources)
-				.where(eq(ingestionSources.mergedIntoId, id));
-
-			for (const child of children) {
-				await this.delete(child.id, actor, actorIp, force);
+		const scope = source.mergedIntoId
+			? eq(ingestionSources.id, id)
+			: or(eq(ingestionSources.id, id), eq(ingestionSources.mergedIntoId, id));
+		const planned = await db.select().from(ingestionSources).where(scope);
+		const ids = planned.map((row) => row.id);
+		// Cancel queued work before taking locks. Active workers are not awaited under the gate:
+		// current writes finish first, and late writers recheck source existence after acquiring locks.
+		const jobs = await ingestionQueue.getJobs(['waiting', 'delayed', 'paused', 'prioritized']);
+		for (const job of jobs) {
+			if (!ids.includes(job.data.ingestionSourceId)) continue;
+			try {
+				await job.remove();
+			} catch (error) {
+				logger.error(
+					{ error, jobId: job.id },
+					'Failed to cancel queued work before source deletion'
+				);
+				throw error;
 			}
 		}
-
-		// Delete all emails and attachments from storage.
-		// Path is keyed on the source ID only — the name is intentionally excluded
-		// to ensure correctness even when the source was renamed after creation.
-		const storage = new StorageService();
-		const emailPath = `${config.storage.openArchiverFolderName}/${source.id}/`;
-		await storage.delete(emailPath);
-
-		if (
-			(source.credentials.type === 'pst_import' ||
-				source.credentials.type === 'eml_import' ||
-				source.credentials.type === 'mbox_import') &&
-			source.credentials.uploadedFilePath &&
-			(await storage.exists(source.credentials.uploadedFilePath))
-		) {
-			await storage.delete(source.credentials.uploadedFilePath);
-		}
-
-		// Delete all emails from the database
-		// NOTE: This is done by database CASADE, change when CASADE relation no longer exists.
-		// await db.delete(archivedEmails).where(eq(archivedEmails.ingestionSourceId, id));
-
-		// Delete all documents from Meilisearch.
-		//
-		// Waited to completion, and not merely enqueued: the rows below are removed by cascade the
-		// moment this method returns, so a task that fails afterwards leaves documents describing
-		// emails nothing can resolve, and search answers with results that cannot be opened (#446).
-		// Failing here instead keeps the source and lets the caller retry. The id is quoted rather
-		// than interpolated so a value carrying a quote cannot alter the filter.
-		const searchService = new SearchService();
-		const deletionTask = await searchService.deleteDocumentsByFilter(
-			'emails',
-			`ingestionSourceId = ${quoteMeiliString(id)}`
-		);
-		await searchService.waitForTask(deletionTask.taskUid);
-
-		const [deletedSource] = await db
-			.delete(ingestionSources)
-			.where(eq(ingestionSources.id, id))
-			.returning();
-
-		await this.auditService.createAuditLog({
-			actorIdentifier: actor.id,
-			actionType: 'DELETE',
-			targetType: 'IngestionSource',
-			targetId: id,
-			actorIp,
-			details: {
-				sourceName: deletedSource.name,
-			},
+		const { deletedRows, pendingUploads } = await withStoragePurgeLock(async (tx) => {
+			const fresh = await tx.select().from(ingestionSources).where(scope).for('update');
+			if (
+				fresh.length !== planned.length ||
+				!fresh.some((row) => row.id === id) ||
+				fresh.some(
+					(row) =>
+						!planned.some(
+							(old) => old.id === row.id && old.mergedIntoId === row.mergedIntoId
+						)
+				)
+			) {
+				throw new Error(
+					'Ingestion source group changed before deletion; retry the operation'
+				);
+			}
+			const [outsideCarrier] = await tx
+				.select({ id: archivedEmails.id })
+				.from(emailAttachments)
+				.innerJoin(
+					attachmentsSchema,
+					eq(attachmentsSchema.id, emailAttachments.attachmentId)
+				)
+				.innerJoin(archivedEmails, eq(archivedEmails.id, emailAttachments.emailId))
+				.where(
+					and(
+						inArray(attachmentsSchema.ingestionSourceId, ids),
+						notInArray(archivedEmails.ingestionSourceId, ids)
+					)
+				)
+				.limit(1);
+			if (outsideCarrier) {
+				throw new Error(
+					'Source attachments are still referenced by another source; deletion refused'
+				);
+			}
+			const receipts = await tx
+				.select()
+				.from(syncSessions)
+				.where(inArray(syncSessions.ingestionSourceId, ids));
+			const receiptPaths = receipts.flatMap((session) => {
+				if (session.uploadReceipt === null) return [];
+				const receipt = readUploadReceipt(session.uploadReceipt);
+				if (!receipt || receipt.sourceId !== session.ingestionSourceId) {
+					throw new Error(
+						`Cannot verify upload receipt for source deletion: ${session.id}`
+					);
+				}
+				return [receipt.inputPath];
+			});
+			const pendingUploads = [
+				...new Set([
+					...receiptPaths,
+					...fresh
+						.map((row) => this.pendingUploadFromRow(row))
+						.filter((path): path is string => Boolean(path)),
+				]),
+			];
+			return {
+				keys: [],
+				run: async () => {
+					const searchService = new SearchService();
+					for (const sourceId of ids) {
+						const task = await searchService.deleteDocumentsByFilter(
+							'emails',
+							`ingestionSourceId = ${quoteMeiliString(sourceId)}`
+						);
+						await searchService.waitForTask(task.taskUid);
+					}
+					const deletedRows = await tx
+						.delete(ingestionSources)
+						.where(inArray(ingestionSources.id, ids))
+						.returning();
+					return { deletedRows, pendingUploads };
+				},
+			};
 		});
+		const deletedSource = deletedRows.find((row) => row.id === id);
+		if (!deletedSource) throw new Error('Ingestion source not found');
+		for (const deleted of deletedRows) {
+			await this.auditService.createAuditLog({
+				actorIdentifier: actor.id,
+				actionType: 'DELETE',
+				targetType: 'IngestionSource',
+				targetId: deleted.id,
+				actorIp,
+				details: { sourceName: deleted.name },
+			});
+		}
+		const storage = new StorageService();
+		try {
+			await withStoragePurgeLock(async (tx) => {
+				const removable: string[] = [];
+				const prefixes = ids.map(
+					(sourceId) => `${config.storage.openArchiverFolderName}/${sourceId}/`
+				);
+				const uploadPrefixes = new Set(await this.referencedUploads(tx, prefixes, true));
+				for (const sourceId of ids) {
+					const prefix = `${config.storage.openArchiverFolderName}/${sourceId}/`;
+					const [liveSource] = await tx
+						.select({ id: ingestionSources.id })
+						.from(ingestionSources)
+						.where(eq(ingestionSources.id, sourceId))
+						.limit(1);
+					const [emailRef] = await tx
+						.select({ id: archivedEmails.id })
+						.from(archivedEmails)
+						.where(
+							sql`left(${archivedEmails.storagePath}, ${prefix.length}) = ${prefix}`
+						)
+						.limit(1);
+					const [attachmentRef] = await tx
+						.select({ id: attachmentsSchema.id })
+						.from(attachmentsSchema)
+						.where(
+							sql`left(${attachmentsSchema.storagePath}, ${prefix.length}) = ${prefix}`
+						)
+						.limit(1);
+					if (!liveSource && !emailRef && !attachmentRef && !uploadPrefixes.has(prefix))
+						removable.push(prefix);
+				}
+				return {
+					keys: [],
+					run: async () => {
+						for (const prefix of removable) await storage.delete(prefix);
+					},
+				};
+			});
+			await cleanupUnreferencedObjects(storage, pendingUploads, (tx) =>
+				this.referencedUploads(tx, pendingUploads)
+			);
+		} catch (error) {
+			logger.error(
+				{ error, sourceIds: ids },
+				'Source metadata deleted but storage cleanup failed'
+			);
+			throw error;
+		}
 
 		const decryptedSource = this.decryptSource(deletedSource);
 		if (!decryptedSource) {
@@ -1393,35 +1781,6 @@ export class IngestionService {
 	}
 
 	/**
-	 * Builds the filesystem-safe filename component for a stored attachment (#405).
-	 * attachment.filename comes straight from parsed MIME headers — sender-controlled — so
-	 * it can exceed the 255-byte filename limit (ENAMETOOLONG drops the whole email) or
-	 * contain '/', '\' or '..' segments that would create unintended directories or escape
-	 * the source's attachments folder entirely. Sanitizes separators/control chars, keeps
-	 * short names as-is for readability, and byte-truncates long ones with a short sha256
-	 * suffix of the original name, preserving the extension. The original filename is still
-	 * stored unmodified in the attachments.filename column.
-	 */
-	private buildAttachmentFileName(filename: string): string {
-		const sanitized = filename.replace(/[/\\\u0000-\u001f]/g, '_');
-		// 180-byte cap + the 8-byte `uniqueId-` prefix stays well under the 255-byte limit.
-		if (Buffer.byteLength(sanitized) <= 180) {
-			return sanitized;
-		}
-		// Split off a real extension (≤ 16 bytes); otherwise treat the name as extensionless.
-		const dotIndex = sanitized.lastIndexOf('.');
-		let base = sanitized;
-		let ext = '';
-		if (dotIndex > 0 && Buffer.byteLength(sanitized.slice(dotIndex)) <= 16) {
-			base = sanitized.slice(0, dotIndex);
-			ext = sanitized.slice(dotIndex);
-		}
-		const hashSuffix = createHash('sha256').update(filename).digest('hex').slice(0, 8);
-		const budget = 180 - Buffer.byteLength(`-${hashSuffix}${ext}`);
-		return `${truncateToBytes(base, budget)}-${hashSuffix}${ext}`;
-	}
-
-	/**
 	 * The merge group's source ids, resolved once per source per job.
 	 *
 	 * findGroupSourceIds costs a SELECT — and, when the source is a merge child, a findById whose
@@ -1504,11 +1863,21 @@ export class IngestionService {
 				return existingAttachment.id;
 			}
 
-			// New attachment: store under the root source's folder. Path uses the source ID only —
-			// not the name — so that renaming a source never causes a path mismatch.
-			const uniqueId = randomUUID().slice(0, 7);
-			const storagePath = `${config.storage.openArchiverFolderName}/${effectiveSourceId}/attachments/${uniqueId}-${this.buildAttachmentFileName(attachment.filename)}`;
-			await storage.put(storagePath, attachment.content);
+			const storagePath = this.attachmentStoragePath(effectiveSourceId, attachmentHash);
+			try {
+				await storage.put(storagePath, attachment.content, { overwrite: false });
+			} catch (error) {
+				if (!isStorageObjectExistsError(error)) throw error;
+				const winner = await streamToBuffer(await storage.get(storagePath));
+				if (
+					winner.length !== attachment.content.length ||
+					createHash('sha256').update(winner).digest('hex') !== attachmentHash
+				) {
+					throw new Error(
+						`Attachment content does not match its storage key: ${storagePath}`
+					);
+				}
+			}
 
 			const [newRecord] = await tx
 				.insert(attachmentsSchema)
@@ -1527,6 +1896,10 @@ export class IngestionService {
 
 		attachmentIds.set(cacheKey, resolved);
 		return resolved;
+	}
+
+	private attachmentStoragePath(rootId: string, hash: string): string {
+		return `${config.storage.openArchiverFolderName}/${rootId}/attachments/sha256-${hash}`;
 	}
 
 	/**
@@ -1587,228 +1960,335 @@ export class IngestionService {
 			//         in the group. Write file + create row.
 			// ─────────────────────────────────────────────────────────────────
 
-			const groupIds = await this.resolveGroupSourceIds(source);
-			const groupSourceFilter = IngestionService.groupScopeFilter(groupIds);
-
 			const attachmentHashes = email.attachments.map((attachment) =>
 				createHash('sha256').update(attachment.content).digest('hex')
 			);
 			const lockKey = (kind: string, key: string) =>
 				JSON.stringify(['open-archiver:ingestion', effectiveSource.id, kind, key]);
 			const lockKeys = [
-				...new Set(
-					[
-						lockKey('message', messageId),
-						...(effectiveSource.preserveOriginalFile
-							? [
-									lockKey(
-										'raw',
-										createHash('sha256').update(rawEmlBuffer).digest('hex')
-									),
-								]
-							: attachmentHashes.map((hash) => lockKey('attachment', hash))),
-					].map((key) => createHash('sha256').update(key).digest().readBigInt64BE(0))
-				),
-			].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+				lockKey('message', messageId),
+				...(effectiveSource.preserveOriginalFile
+					? [lockKey('raw', createHash('sha256').update(rawEmlBuffer).digest('hex'))]
+					: attachmentHashes.map((hash) => lockKey('attachment', hash))),
+			];
+			const sanitizedPath = email.path
+				? email.path
+						.split('/')
+						.map((segment) => this.clampPathSegment(segment))
+						.join('/')
+				: '';
+			const emailPath = `${config.storage.openArchiverFolderName}/${effectiveSource.id}/emails/${sanitizedPath}${this.buildEmailFileName(email.id)}.eml`;
+			let strippedMessage: Promise<Buffer> | undefined;
 
-			return await db.transaction(
-				async (tx) => {
-					// Sort/deduplicate actual lock IDs across every category, not their pre-hash names.
-					// Collisions add contention only; equality still uses the existing SQL predicates.
-					for (const key of lockKeys) {
-						await tx.execute(
-							sql`SELECT pg_advisory_xact_lock(${key.toString()}::bigint)`
-						);
-					}
-					const attachmentIdCache = new Map<string, Promise<string>>();
+			return await withStorageLocks<PendingEmail | null>(lockKeys, async (tx) => {
+				const freshSource = await tx.query.ingestionSources.findFirst({
+					where: eq(ingestionSources.id, source.id),
+				});
+				const freshRoot =
+					source.id === effectiveSource.id
+						? freshSource
+						: await tx.query.ingestionSources.findFirst({
+								where: eq(ingestionSources.id, effectiveSource.id),
+							});
+				if (
+					!freshSource ||
+					!freshRoot ||
+					(freshSource.mergedIntoId ?? freshSource.id) !== effectiveSource.id ||
+					freshRoot.preserveOriginalFile !== effectiveSource.preserveOriginalFile
+				) {
+					throw new Error('Ingestion source was deleted or changed during processing');
+				}
+				const children = await tx
+					.select({ id: ingestionSources.id })
+					.from(ingestionSources)
+					.where(eq(ingestionSources.mergedIntoId, effectiveSource.id));
+				const groupSourceFilter = IngestionService.groupScopeFilter([
+					effectiveSource.id,
+					...children.map((child) => child.id),
+				]);
+				const attachmentIdCache = new Map<string, Promise<string>>();
 
-					// Gates 1 and 2 in one round trip. They ask the same index the same question and differ
-					// only by the mailbox predicate, so ordering this mailbox's row first answers both: if
-					// the row that comes back belongs to this mailbox it is gate 1, and if one exists at all
-					// but belongs to another mailbox it is gate 2. Two queries per email were one more than
-					// the question needed.
-					// Postgres both orders on and returns the mailbox predicate, so the answer to gate 1 is
-					// the one the database computed — not a second opinion formed in JavaScript, which
-					// would have to reproduce btrim's exact idea of whitespace to stay in agreement.
-					const isThisMailbox = sql<boolean>`${normalizedMailbox} = ${userEmail}`;
-					const groupMatch = await tx.query.archivedEmails.findFirst({
-						where: and(
-							eq(archivedEmails.messageIdHeader, messageId),
-							groupSourceFilter
-						),
-						columns: {
-							id: true,
-							storagePath: true,
-							storageHashSha256: true,
-							sizeBytes: true,
-							hasAttachments: true,
-						},
-						extras: {
-							isThisMailbox: isThisMailbox.as('is_this_mailbox'),
-						},
-						orderBy: desc(isThisMailbox),
-					});
+				// Gates 1 and 2 in one round trip. They ask the same index the same question and differ
+				// only by the mailbox predicate, so ordering this mailbox's row first answers both: if
+				// the row that comes back belongs to this mailbox it is gate 1, and if one exists at all
+				// but belongs to another mailbox it is gate 2. Two queries per email were one more than
+				// the question needed.
+				// Postgres both orders on and returns the mailbox predicate, so the answer to gate 1 is
+				// the one the database computed — not a second opinion formed in JavaScript, which
+				// would have to reproduce btrim's exact idea of whitespace to stay in agreement.
+				const isThisMailbox = sql<boolean>`${normalizedMailbox} = ${userEmail}`;
+				const groupMatch = await tx.query.archivedEmails.findFirst({
+					where: and(eq(archivedEmails.messageIdHeader, messageId), groupSourceFilter),
+					columns: {
+						id: true,
+						storagePath: true,
+						storageHashSha256: true,
+						sizeBytes: true,
+						hasAttachments: true,
+					},
+					extras: {
+						isThisMailbox: isThisMailbox.as('is_this_mailbox'),
+					},
+					orderBy: desc(isThisMailbox),
+				});
 
-					// Gate 1: Per-mailbox duplicate check (idempotency guard for re-sync)
-					if (groupMatch?.isThisMailbox) {
-						logger.debug(
-							{ messageId, userEmail, ingestionSourceId: source.id },
-							'Skipping duplicate email (same mailbox already has this email)'
-						);
-						return null;
-					}
-
-					// Gate 2: Another mailbox in the group already has this email. Skip the file write and
-					// create a reference row sharing the existing storagePath and storageHashSha256.
-					const existingGroupEmail = groupMatch;
-
-					if (existingGroupEmail) {
-						// Shared-file reference path: no file write, just a new DB row
-						// pointing to the same physical storagePath.
-						const [referenceRow] = await tx
-							.insert(archivedEmails)
-							.values({
-								ingestionSourceId: effectiveSource.id,
-								userEmail,
-								threadId: email.threadId,
-								messageIdHeader: messageId,
-								providerMessageId,
-								sentAt: email.receivedAt,
-								subject: email.subject,
-								senderName: email.from[0]?.name,
-								senderEmail: email.from[0]?.address || UNKNOWN_SENDER,
-								recipients: {
-									to: email.to,
-									cc: email.cc,
-									bcc: email.bcc ?? [],
-								},
-								// Re-use existing physical file and hash
-								storagePath: existingGroupEmail.storagePath,
-								storageHashSha256: existingGroupEmail.storageHashSha256,
-								sizeBytes: existingGroupEmail.sizeBytes,
-								hasAttachments: existingGroupEmail.hasAttachments,
-								// The delivering source, NOT effectiveSource. How a message was captured is
-								// a property of the source that brought it in; storage ownership is not.
-								// A journaling child merged into a mailbox root has an effectiveSource of
-								// microsoft_365 or the like, so reading the provider off the root recorded
-								// every journaled message as not journaled — and the integrity report,
-								// which exists to state the capture path, printed the opposite of the truth.
-								isJournaled: source.provider === 'smtp_journaling',
-								path: email.path,
-								tags: email.tags,
+				const existingLinks = groupMatch?.hasAttachments
+					? await tx
+							.select({
+								attachmentId: emailAttachments.attachmentId,
+								storagePath: attachmentsSchema.storagePath,
 							})
-							.returning();
+							.from(emailAttachments)
+							.innerJoin(
+								attachmentsSchema,
+								eq(emailAttachments.attachmentId, attachmentsSchema.id)
+							)
+							.where(eq(emailAttachments.emailId, groupMatch.id))
+					: [];
+				const rawHash = createHash('sha256').update(rawEmlBuffer).digest('hex');
+				const hashDuplicate =
+					!groupMatch && effectiveSource.preserveOriginalFile
+						? await tx.query.archivedEmails.findFirst({
+								where: and(
+									eq(archivedEmails.storageHashSha256, rawHash),
+									matchesMailbox(userEmail),
+									eq(archivedEmails.ingestionSourceId, effectiveSource.id)
+								),
+								columns: { id: true },
+							})
+						: undefined;
+				const hashExistingOther =
+					!groupMatch && effectiveSource.preserveOriginalFile
+						? await tx.query.archivedEmails.findFirst({
+								where: and(
+									eq(archivedEmails.storageHashSha256, rawHash),
+									eq(archivedEmails.ingestionSourceId, effectiveSource.id)
+								),
+							})
+						: undefined;
+				const emlBuffer =
+					!groupMatch && !effectiveSource.preserveOriginalFile
+						? await (strippedMessage ??= stripAttachmentsFromEml(rawEmlBuffer))
+						: rawEmlBuffer;
+				const existingAttachments =
+					!groupMatch && !effectiveSource.preserveOriginalFile && attachmentHashes.length
+						? await tx.query.attachments.findMany({
+								where: and(
+									eq(attachmentsSchema.ingestionSourceId, effectiveSource.id),
+									inArray(attachmentsSchema.contentHashSha256, [
+										...new Set(attachmentHashes),
+									])
+								),
+							})
+						: [];
+				const paths = [
+					emailPath,
+					`${emailPath.replace(/\.eml$/, '')}-${createHash('sha256').update(emlBuffer).digest('hex').slice(0, 8)}.eml`,
+					...(groupMatch ? [groupMatch.storagePath] : []),
+					...(hashExistingOther ? [hashExistingOther.storagePath] : []),
+					...existingLinks.map((link) => link.storagePath),
+					...existingAttachments.map((attachment) => attachment.storagePath),
+					...(!effectiveSource.preserveOriginalFile
+						? attachmentHashes.map((hash) =>
+								this.attachmentStoragePath(effectiveSource.id, hash)
+							)
+						: []),
+				];
 
-						// Copy attachment links from the existing email to this reference row
-						// so that per-mailbox attachment queries return correct results.
-						if (existingGroupEmail.hasAttachments) {
-							const existingLinks = await tx
-								.select({ attachmentId: emailAttachments.attachmentId })
-								.from(emailAttachments)
-								.where(eq(emailAttachments.emailId, existingGroupEmail.id));
-
-							if (existingLinks.length > 0) {
-								await tx
-									.insert(emailAttachments)
-									.values(
-										existingLinks.map((link) => ({
-											emailId: referenceRow.id,
-											attachmentId: link.attachmentId,
-										}))
-									)
-									.onConflictDoNothing();
-							}
-						}
-
-						logger.debug(
-							{
-								messageId,
-								userEmail,
-								existingEmailId: existingGroupEmail.id,
-								referenceEmailId: referenceRow.id,
-							},
-							'Created shared-file reference row for another mailbox owner'
-						);
-
-						return {
-							archivedEmailId: referenceRow.id,
-						};
-					}
-
-					// Gate 3: Full new ingestion — first time this email is seen in the group.
-					// Clamp each folder segment so server-provided folder names cannot exceed the
-					// per-component filesystem limit (#405). The original path is stored in the DB row.
-					const sanitizedPath = email.path
-						? email.path
-								.split('/')
-								.map((segment) => this.clampPathSegment(segment))
-								.join('/')
-						: '';
-					// Use effectiveSource (root) for storage path and DB ownership.
-					// Child sources are assistants; all content physically belongs to the root.
-					// Path uses the source ID only — not the name — so that renaming a source
-					// never causes a path mismatch between old and newly stored files.
-					const emailPath = `${config.storage.openArchiverFolderName}/${effectiveSource.id}/emails/${sanitizedPath}${this.buildEmailFileName(email.id)}.eml`;
-
-					// GoBD / Preserve Original File mode: store the unmodified raw EML as-is.
-					// No attachment stripping, no attachment table records — the full MIME body
-					// including attachments is preserved in the single .eml file.
-					// Use the root (effectiveSource) compliance mode as authoritative.
-					if (effectiveSource.preserveOriginalFile) {
-						const emailHash = createHash('sha256').update(rawEmlBuffer).digest('hex');
-
-						// Hash-level deduplication within the root source — catches emails
-						// with different or missing Message-IDs that are byte-identical.
-						const hashDuplicate = await tx.query.archivedEmails.findFirst({
-							where: and(
-								eq(archivedEmails.storageHashSha256, emailHash),
-								matchesMailbox(userEmail),
-								eq(archivedEmails.ingestionSourceId, effectiveSource.id)
-							),
-							columns: { id: true },
-						});
-
-						if (hashDuplicate) {
+				return {
+					keys: paths.map(storagePathLockKey),
+					run: async () => {
+						// Gate 1: Per-mailbox duplicate check (idempotency guard for re-sync)
+						if (groupMatch?.isThisMailbox) {
 							logger.debug(
-								{ emailHash, userEmail, ingestionSourceId: effectiveSource.id },
-								'Skipping duplicate email (hash-level dedup, preserve original mode)'
+								{ messageId, userEmail, ingestionSourceId: source.id },
+								'Skipping duplicate email (same mailbox already has this email)'
 							);
 							return null;
 						}
 
-						// Check if the same hash exists for a DIFFERENT mailbox — share the file
-						const hashExistingOther = await tx.query.archivedEmails.findFirst({
-							where: and(
-								eq(archivedEmails.storageHashSha256, emailHash),
-								eq(archivedEmails.ingestionSourceId, effectiveSource.id)
-							),
-						});
+						// Gate 2: Another mailbox in the group already has this email. Skip the file write and
+						// create a reference row sharing the existing storagePath and storageHashSha256.
+						const existingGroupEmail = groupMatch;
 
-						let storagePath: string;
-						let storedHash = emailHash;
-						let storedSize = rawEmlBuffer.length;
-						if (hashExistingOther) {
-							// File already on disk — create a reference row
-							storagePath = hashExistingOther.storagePath;
-						} else {
-							// First occurrence — store the unmodified raw buffer. The hash-level checks
-							// above cannot see a same-Message-ID copy with different bytes (a second
-							// delivery with its own Received headers), so the write itself must refuse to
-							// replace whatever such a copy already put at this path, and reports back
-							// where the bytes actually landed.
-							({
-								storagePath,
-								hash: storedHash,
-								sizeBytes: storedSize,
-							} = await this.storeEmailOrAdopt(storage, emailPath, rawEmlBuffer, {
-								messageId,
-								userEmail,
-								ingestionSourceId: effectiveSource.id,
-								messageIdHeader: IngestionService.messageIdHeaderOf(email),
-								knownHash: emailHash,
-							}));
+						if (existingGroupEmail) {
+							// Shared-file reference path: no file write, just a new DB row
+							// pointing to the same physical storagePath.
+							const [referenceRow] = await tx
+								.insert(archivedEmails)
+								.values({
+									ingestionSourceId: effectiveSource.id,
+									userEmail,
+									threadId: email.threadId,
+									messageIdHeader: messageId,
+									providerMessageId,
+									sentAt: email.receivedAt,
+									subject: email.subject,
+									senderName: email.from[0]?.name,
+									senderEmail: email.from[0]?.address || UNKNOWN_SENDER,
+									recipients: {
+										to: email.to,
+										cc: email.cc,
+										bcc: email.bcc ?? [],
+									},
+									// Re-use existing physical file and hash
+									storagePath: existingGroupEmail.storagePath,
+									storageHashSha256: existingGroupEmail.storageHashSha256,
+									sizeBytes: existingGroupEmail.sizeBytes,
+									hasAttachments: existingGroupEmail.hasAttachments,
+									// The delivering source, NOT effectiveSource. How a message was captured is
+									// a property of the source that brought it in; storage ownership is not.
+									// A journaling child merged into a mailbox root has an effectiveSource of
+									// microsoft_365 or the like, so reading the provider off the root recorded
+									// every journaled message as not journaled — and the integrity report,
+									// which exists to state the capture path, printed the opposite of the truth.
+									isJournaled: source.provider === 'smtp_journaling',
+									path: email.path,
+									tags: email.tags,
+								})
+								.returning();
+
+							// Copy attachment links from the existing email to this reference row
+							// so that per-mailbox attachment queries return correct results.
+							if (existingGroupEmail.hasAttachments) {
+								if (existingLinks.length > 0) {
+									await tx
+										.insert(emailAttachments)
+										.values(
+											existingLinks.map((link) => ({
+												emailId: referenceRow.id,
+												attachmentId: link.attachmentId,
+											}))
+										)
+										.onConflictDoNothing();
+								}
+							}
+
+							logger.debug(
+								{
+									messageId,
+									userEmail,
+									existingEmailId: existingGroupEmail.id,
+									referenceEmailId: referenceRow.id,
+								},
+								'Created shared-file reference row for another mailbox owner'
+							);
+
+							return {
+								archivedEmailId: referenceRow.id,
+							};
 						}
 
+						// GoBD / Preserve Original File mode: store the unmodified raw EML as-is.
+						// No attachment stripping, no attachment table records — the full MIME body
+						// including attachments is preserved in the single .eml file.
+						// Use the root (effectiveSource) compliance mode as authoritative.
+						if (effectiveSource.preserveOriginalFile) {
+							const emailHash = rawHash;
+
+							if (hashDuplicate) {
+								logger.debug(
+									{ emailHash, userEmail, ingestionSourceId: effectiveSource.id },
+									'Skipping duplicate email (hash-level dedup, preserve original mode)'
+								);
+								return null;
+							}
+
+							let storagePath: string;
+							let storedHash = emailHash;
+							let storedSize = rawEmlBuffer.length;
+							if (hashExistingOther) {
+								// File already on disk — create a reference row
+								storagePath = hashExistingOther.storagePath;
+							} else {
+								// First occurrence — store the unmodified raw buffer. The hash-level checks
+								// above cannot see a same-Message-ID copy with different bytes (a second
+								// delivery with its own Received headers), so the write itself must refuse to
+								// replace whatever such a copy already put at this path, and reports back
+								// where the bytes actually landed.
+								({
+									storagePath,
+									hash: storedHash,
+									sizeBytes: storedSize,
+								} = await this.storeEmailOrAdopt(storage, emailPath, rawEmlBuffer, {
+									messageId,
+									userEmail,
+									ingestionSourceId: effectiveSource.id,
+									messageIdHeader: IngestionService.messageIdHeaderOf(email),
+									knownHash: emailHash,
+								}));
+							}
+
+							const [archivedEmail] = await tx
+								.insert(archivedEmails)
+								.values({
+									ingestionSourceId: effectiveSource.id,
+									userEmail,
+									threadId: email.threadId,
+									messageIdHeader: messageId,
+									providerMessageId,
+									sentAt: email.receivedAt,
+									subject: email.subject,
+									senderName: email.from[0]?.name,
+									senderEmail: email.from[0]?.address || UNKNOWN_SENDER,
+									recipients: {
+										to: email.to,
+										cc: email.cc,
+										bcc: email.bcc ?? [],
+									},
+									storagePath,
+									storageHashSha256: storedHash,
+									sizeBytes: storedSize,
+									hasAttachments: email.attachments.length > 0,
+									// Delivering source, not the merge root — see the reference-row insert above.
+									isJournaled: source.provider === 'smtp_journaling',
+									path: email.path,
+									tags: email.tags,
+								})
+								.returning();
+
+							return {
+								archivedEmailId: archivedEmail.id,
+							};
+						}
+
+						// Default mode: strip non-inline attachments from the .eml to avoid double-storing
+						// attachment data (attachments are stored separately).
+						const {
+							storagePath: emailStoragePath,
+							hash: emailHash,
+							sizeBytes: emailSize,
+						} = await this.storeEmailOrAdopt(storage, emailPath, emlBuffer, {
+							messageId,
+							userEmail,
+							ingestionSourceId: effectiveSource.id,
+							messageIdHeader: IngestionService.messageIdHeaderOf(email),
+						});
+
+						// All writes use this transaction, including attachment lookup/publication.
+						const results = await mapWithConcurrency(
+							email.attachments,
+							ATTACHMENT_STORE_CONCURRENCY,
+							async (attachment, index) => {
+								return this.getOrCreateAttachmentId(
+									tx,
+									attachmentIdCache,
+									attachmentHashes[index],
+									effectiveSource.id,
+									attachment,
+									storage
+								);
+							}
+						);
+						const attachmentIds: string[] = [];
+						for (const result of results) {
+							if (result.status === 'rejected') {
+								throw result.reason;
+							}
+							attachmentIds.push(result.value);
+						}
+
+						// The surrounding transaction publishes all rows and links or rolls them all back.
 						const [archivedEmail] = await tx
 							.insert(archivedEmails)
 							.values({
@@ -1826,9 +2306,9 @@ export class IngestionService {
 									cc: email.cc,
 									bcc: email.bcc ?? [],
 								},
-								storagePath,
-								storageHashSha256: storedHash,
-								sizeBytes: storedSize,
+								storagePath: emailStoragePath,
+								storageHashSha256: emailHash,
+								sizeBytes: emailSize,
 								hasAttachments: email.attachments.length > 0,
 								// Delivering source, not the merge root — see the reference-row insert above.
 								isJournaled: source.provider === 'smtp_journaling',
@@ -1836,92 +2316,21 @@ export class IngestionService {
 								tags: email.tags,
 							})
 							.returning();
-
-						return {
-							archivedEmailId: archivedEmail.id,
-						};
-					}
-
-					// Default mode: strip non-inline attachments from the .eml to avoid double-storing
-					// attachment data (attachments are stored separately).
-					const emlBuffer = await stripAttachmentsFromEml(rawEmlBuffer);
-					const {
-						storagePath: emailStoragePath,
-						hash: emailHash,
-						sizeBytes: emailSize,
-					} = await this.storeEmailOrAdopt(storage, emailPath, emlBuffer, {
-						messageId,
-						userEmail,
-						ingestionSourceId: effectiveSource.id,
-						messageIdHeader: IngestionService.messageIdHeaderOf(email),
-					});
-
-					// All writes use this transaction, including attachment lookup/publication.
-					const results = await mapWithConcurrency(
-						email.attachments,
-						ATTACHMENT_STORE_CONCURRENCY,
-						async (attachment, index) => {
-							return this.getOrCreateAttachmentId(
-								tx,
-								attachmentIdCache,
-								attachmentHashes[index],
-								effectiveSource.id,
-								attachment,
-								storage
-							);
+						if (attachmentIds.length > 0) {
+							await tx
+								.insert(emailAttachments)
+								.values(
+									attachmentIds.map((attachmentId) => ({
+										emailId: archivedEmail.id,
+										attachmentId,
+									}))
+								)
+								.onConflictDoNothing();
 						}
-					);
-					const attachmentIds: string[] = [];
-					for (const result of results) {
-						if (result.status === 'rejected') {
-							throw result.reason;
-						}
-						attachmentIds.push(result.value);
-					}
-
-					// The surrounding transaction publishes all rows and links or rolls them all back.
-					const [archivedEmail] = await tx
-						.insert(archivedEmails)
-						.values({
-							ingestionSourceId: effectiveSource.id,
-							userEmail,
-							threadId: email.threadId,
-							messageIdHeader: messageId,
-							providerMessageId,
-							sentAt: email.receivedAt,
-							subject: email.subject,
-							senderName: email.from[0]?.name,
-							senderEmail: email.from[0]?.address || UNKNOWN_SENDER,
-							recipients: {
-								to: email.to,
-								cc: email.cc,
-								bcc: email.bcc ?? [],
-							},
-							storagePath: emailStoragePath,
-							storageHashSha256: emailHash,
-							sizeBytes: emailSize,
-							hasAttachments: email.attachments.length > 0,
-							// Delivering source, not the merge root — see the reference-row insert above.
-							isJournaled: source.provider === 'smtp_journaling',
-							path: email.path,
-							tags: email.tags,
-						})
-						.returning();
-					if (attachmentIds.length > 0) {
-						await tx
-							.insert(emailAttachments)
-							.values(
-								attachmentIds.map((attachmentId) => ({
-									emailId: archivedEmail.id,
-									attachmentId,
-								}))
-							)
-							.onConflictDoNothing();
-					}
-					return { archivedEmailId: archivedEmail.id };
-				},
-				{ isolationLevel: 'read committed' }
-			);
+						return { archivedEmailId: archivedEmail.id };
+					},
+				};
+			});
 		} catch (error) {
 			logger.error({
 				message: `Failed to process email ${email.id} for source ${source.id}`,

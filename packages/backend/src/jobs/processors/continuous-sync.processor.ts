@@ -7,6 +7,7 @@ import { SyncSessionService } from '../../services/SyncSessionService';
 import { logger } from '../../config/logger';
 import { normalizeEmailAddress } from '../../helpers/emailAddress';
 import { ingestionQueue } from '../queues';
+import { uploadedInputPath } from '../../helpers/uploadCompletion';
 
 export default async (job: Job<IContinuousSyncJob>) => {
 	const { ingestionSourceId } = job.data;
@@ -81,10 +82,13 @@ export default async (job: Job<IContinuousSyncJob>) => {
 		}
 
 		// Phase 2: Create a session BEFORE dispatching any jobs.
+		const inputPath = uploadedInputPath(source.credentials);
+		const declaredMailboxes = inputPath ? [...new Set(userEmails)] : userEmails;
 		const sessionId = await SyncSessionService.create(
 			ingestionSourceId,
 			userEmails.length,
-			false
+			false,
+			inputPath ? { inputPath, expectedMailboxes: userEmails } : undefined
 		);
 
 		logger.info(
@@ -92,7 +96,7 @@ export default async (job: Job<IContinuousSyncJob>) => {
 			'Dispatching process-mailbox jobs for continuous sync'
 		);
 
-		await enqueueMailboxJobs(source.id, userEmails, sessionId);
+		await enqueueMailboxJobs(source.id, declaredMailboxes, sessionId, inputPath);
 
 		// The status will be set back to 'active' by the 'sync-cycle-finished' job
 		// once all the mailboxes have been processed.

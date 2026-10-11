@@ -113,10 +113,23 @@ Retrieves a file from the specified path as a readable stream.
 
 ### `delete(path)`
 
-Deletes a file from the storage backend.
+Uses the provider's existing deletion semantics: local files/directories are removed recursively;
+S3 deletes keys matching the supplied prefix. Use `deleteObject` when prefix deletion is not intended.
 
 - **`path: string`**: The unique identifier of the file to delete.
 - **Returns**: `Promise<void>` - A promise that resolves when the file is deleted. If the file does not exist, the promise will still resolve successfully without throwing an error.
+
+---
+
+### `deleteObject(path)`
+
+Deletes only the exact object. It does not delete keys sharing that prefix, such as `keyA-suffix`
+or `keyA/child` when deleting `keyA`. Local directories are rejected rather than recursively removed;
+local Unicode fallback and containment checks still apply. Missing objects are a no-op.
+
+Archive lifecycle cleanup calls this operation only after metadata deletion commits and exact-path
+reference checks complete under the shared storage locks. A cleanup failure is reported explicitly;
+it can leave unlinked bytes but must not undo metadata deletion or erase a surviving reference.
 
 ---
 

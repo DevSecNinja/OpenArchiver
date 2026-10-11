@@ -162,6 +162,10 @@ export class StorageService implements IStorageProvider {
 		return this.provider.delete(path);
 	}
 
+	deleteObject(path: string): Promise<void> {
+		return this.provider.deleteObject(path);
+	}
+
 	exists(path: string): Promise<boolean> {
 		return this.provider.exists(path);
 	}

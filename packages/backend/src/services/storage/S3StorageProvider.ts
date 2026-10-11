@@ -169,6 +169,10 @@ export class S3StorageProvider implements IStorageProvider {
 		await this.client.send(deleteCommand);
 	}
 
+	async deleteObject(path: string): Promise<void> {
+		await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: path }));
+	}
+
 	async exists(path: string): Promise<boolean> {
 		const command = new HeadObjectCommand({
 			Bucket: this.bucket,

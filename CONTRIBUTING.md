@@ -158,7 +158,7 @@ dot/space aliases are rejected because they do not identify ordinary literal fil
 names remain supported. Unsafe ZIP names abort the import explicitly; previously processed entries
 are not rolled back.
 
-Local storage applies the same constraints to `put`, `get`, `delete`, and `exists`, including each
+Local storage applies the same constraints to `put`, `get`, `delete`, `deleteObject`, and `exists`, including each
 NFC/NFD lookup candidate, and refuses symlink components below the configured root. Existing archives
 using such links must be migrated to ordinary directories/files. The configured root and its ancestors
 are trusted; these checks are **not protection against concurrent filesystem mutation (TOCTOU)** or
@@ -166,24 +166,93 @@ host-managed mount/hard-link changes. Restrict filesystem write access to the ar
 administrators. Conditional writes retain the existing atomic hard-link publish behavior and its
 documented non-atomic claim fallback on filesystems without hard links.
 
-Ingestion serializes the existing deduplication keys with PostgreSQL transaction advisory locks:
-effective root source plus the bounded Message-ID, the preserve-original raw-content hash, and
-extracted attachment-content hashes. The actual signed 64-bit lock IDs are deduplicated and sorted in
-one order across all categories before acquisition. Hash collisions only cause extra serialization;
-the existing SQL predicates still determine equality. Mailboxes are not part of the message lock,
-so another mailbox can receive a shared-file reference without a second full write.
+Ingestion and deletion share **64 fixed global PostgreSQL advisory lock stripes**, independent of
+attachment count. Existing deduplication identities and exact storage paths map to these stripes;
+stripe IDs are deduplicated and acquired in ascending order. Collisions serialize work without changing
+the SQL equality/cardinality rules. High-fanout messages may occupy all 64 stripes temporarily.
+Discovery only reads state: if a fresh read reveals another required stripe, the transaction rolls back
+before external writes, expands its held set, and rechecks. Expansion strictly adds a stripe and is bounded
+by 64; locks are never acquired out of order. Unicode-normalization variants share a path lock.
 
 After acquiring the locks, a `READ COMMITTED` transaction rechecks deduplication and publishes the
 full email or shared reference together with its attachment links. All enclosed database work uses
 the same transaction connection. This deliberately holds a connection and transaction during storage
-I/O; unrelated keys remain independent unless they share an attachment key or collide. Monitor pool
+I/O; disjoint stripes remain independent. Monitor pool
 capacity/storage latency rather than assuming this is a short, database-only transaction.
 
 Storage or link-insert failures are explicit, and all new rows/links roll back so retries cannot skip an
 incomplete email. Attachment-ID memoization is transaction-local; rolled-back IDs cannot leak into
-another attempt. Previously committed attachment records remain reusable. Unlinked files can remain
-after rollback and are not deleted because another writer may own/reference published data. This
-does not repair historical partial imports or promise deduplication during concurrent source regrouping.
+another attempt. New attachment objects use stable root/full-SHA256 paths and conditional publication;
+an existing winner must match decrypted bytes' hash and size before adoption. Retries can rediscover
+files left by rollback without multiplying random object names. Original filename metadata and existing
+random-path records remain usable. Corrupt winners are explicit failures, not overwritten.
+
+Per-email deletion commits row/link removals before physical cleanup. Cleanup reacquires exact-path
+stripes and rechecks references in both email and attachment tables; a concurrently published reference
+prevents removal. `deleteObject` removes exactly one object, unlike the existing `delete` prefix contract.
+DB/search/storage are not one atomic system: a crash, failed audit or cleanup error after metadata commit
+can leave unlinked bytes. These are not blindly deleted, and no general repair/GC service is introduced.
+
+**Whole-source deletion is a conservative coarse-gate operation:** it cancels queued jobs before
+acquiring all 64 stripes and never waits for workers while holding their locks. Active transactions
+finish first; queued/cached-source writers must freshly verify their source/root inside the gate before
+publishing. Group membership is rechecked before DB removal, then prefix cleanup reacquires all stripes
+and retains prefixes still referenced by any email/attachment row. External attachment ownership that
+would break a surviving link refuses deletion explicitly. Cooperating archive **writes may pause
+globally during large source-deletion phases**; ordinary reads do not take this gate. This is an
+implementation tradeoff, not a user-selected throughput setting or deployment approval.
+After metadata commit, unused pending PST/EML/MBOX upload objects from the deleted source and its
+children are removed with exact-object deletion, never prefix deletion. Archive references and
+surviving file-source credentials are rechecked under the same locks; the encrypted source scan is
+paged. Source create/update publishes upload references under the path locks and verifies newly
+selected objects still exist, without requiring a consumed upload to exist for an ordinary source edit.
+Partial or blank provider edits are merged against fresh, locked credentials, never a preflight
+encrypted snapshot; concurrent replacement and canonical input clearing cannot be undone by a blank form.
+Referenced objects are retained; undecipherable relevant credentials fail cleanup explicitly.
+
+### Uploaded-input completion
+
+Migration `0045_upload_completion_receipt` adds one nullable, internal `sync_sessions.upload_receipt`
+JSONB column. It stores only the source ID, original uploaded storage key, a closed normalized mailbox
+set, and canonical outcomes, never credentials or mail content. Existing/null/malformed receipts do
+not authorize deletion. This bounded upload-only receipt is a conservative implementation decision,
+not a user-selected retention setting or a general attempt-lease system.
+
+EML, MBOX and PST connectors no longer delete an uploaded input when enumeration ends or fails.
+The masters close discovery before persisting a receipt and dispatching jobs with the original input
+snapshot. The worker reports success only after iteration, all email writes and indexing-queue
+handoff complete with zero fetch/archive failures. Results are recorded idempotently per declared
+mailbox under the session row lock: reporting A twice cannot complete `[A, B]`, and unknown input or
+mailbox identities cannot advance progress. Failure/skip before full canonical success stays failed;
+only a redundant attempt after independently established success can be ignored.
+
+Finalization and stale-session terminal shortcuts use canonical coverage for uploaded sessions, not
+aggregate counters. A separate release step takes storage stripes before source/session locks, checks
+fresh credentials, the original session/input identity and other unfinished sessions, then clears only
+the matching consumed `uploadedFilePath`. Original display-name metadata, ordinary edits and reupload
+remain supported. Failed/canceled/partial-discovery, paused or ambiguous input stays retained.
+For a successfully completed old input, finalization may perform exact reference-safe cleanup without
+changing replacement credentials or newer import status. The receipt's optional `disposition: handled`
+is recorded only after cleanup succeeds (including retaining bytes owned by another reference).
+An absent current path is not disposition proof; cleanup/marking failures keep the receipt available
+for retry or explicit source purge. Failed old receipts and stale recovery do not overwrite newer status.
+Stale recovery makes a genuinely inactive **current** uploaded import retryable as `error` while
+retaining its receipt and input. It rechecks the source/input, session heartbeat and discovery-claim
+time under locks, and defers if a newer or active session exists. It does not manufacture completion
+or retire ambiguous old work. Releasers honor the freshly locked `handled` disposition before any
+credential/storage action, and upload finalization preserves a pause made after its earlier reads.
+Unfinished receipts continue protecting their original input even after a source is repointed; source
+deletion collects their keys before cascade. Source credentials and receipts participate in both exact
+and prefix cleanup reference checks.
+
+MBOX continues to stream without whole-file spooling. No session-row lock is held while waiting for
+storage stripes. External/local file paths are never released by this completion hook. A crash between
+metadata release and physical cleanup can retain unlinked input bytes; there is no new GC framework.
+API job/session responses omit the internal receipt and upload-job snapshot.
+
+These changes do not repair historical partial imports or promise safe arbitrary concurrent regrouping,
+filesystem mutation, or direct SQL/object-store changes outside the protocol. Deploy the API and
+workers together: mixed application versions that do not share this lock namespace cannot coordinate.
 
 `ingestion-attachments.test.cjs` uses the same explicit `STORAGE_AUTH_TEST_DATABASE_URL` and isolated
 PostgreSQL database pattern as the authorization tests below. It calls the compiled EMLConnector,
@@ -191,9 +260,21 @@ IngestionService and encrypted storage with original colon/trailing-dot/space na
 modes, verifies retrieved bytes and same-source deduplication, and injects storage and database-link
 failures before retry, including shared-reference publication. Concurrent independent service instances
 exercise two mailboxes in a merge group, headerless preserve-mode hash deduplication, unrelated-key
-progress, and a one-connection pool. Queue/provider orchestration is blocked; no external mailbox is contacted.
+progress, and a one-connection pool. Tests also check compiled deletion against uncommitted publication,
+rollback object counts/winner corruption, source purge versus active/late writers, exact deletion and
+the measured lock budget for many small attachments. Search/queue orchestration is controlled in these
+tests; no external mailbox is contacted.
 Hosted `pnpm test:oss` runs it with the existing PostgreSQL service. Without an explicit local test URL
 it is skipped, not counted as integration proof.
+
+`upload-completion.test.cjs` uses the same isolated PostgreSQL service to exercise duplicate and
+unknown results, partial discovery, last-mailbox release, failures/cancellation, shared and repointed
+inputs, and actual worker/finalizer paths. Its valid-plus-broken ZIP uses a real corrupt ZIP entry;
+the streaming MBOX parser failure and PST folder failure are injected bounded fixtures. No real PST
+import or external mailbox coverage is implied. PST attachment construction refuses an incomplete
+message before it reaches persistence; missing/unreadable attachment-stream cases exercise a healthy
+same-ID retry through the real worker/database path, while absent optional recipient properties remain
+permitted.
 
 ### Backend authorization and HTTP regression checks
 

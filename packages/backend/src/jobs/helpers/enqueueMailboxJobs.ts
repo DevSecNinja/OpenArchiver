@@ -20,7 +20,8 @@ const ENQUEUE_PAGE_SIZE = 500;
 export const enqueueMailboxJobs = async (
 	ingestionSourceId: string,
 	userEmails: string[],
-	sessionId: string
+	sessionId: string,
+	uploadInputPath?: string
 ): Promise<void> => {
 	for (let i = 0; i < userEmails.length; i += ENQUEUE_PAGE_SIZE) {
 		await ingestionQueue.addBulk(
@@ -30,6 +31,7 @@ export const enqueueMailboxJobs = async (
 					ingestionSourceId,
 					userEmail,
 					sessionId,
+					...(uploadInputPath ? { uploadInputPath } : {}),
 				},
 			}))
 		);

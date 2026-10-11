@@ -86,6 +86,7 @@ async function assertOperationsReject(key) {
 		() => provider.get(key),
 		() => provider.exists(key),
 		() => provider.delete(key),
+		() => provider.deleteObject(key),
 	]) {
 		await assert.rejects(operation(), unsafeError, key);
 	}
@@ -205,6 +206,7 @@ describe('compiled application archive boundaries', { timeout: 15000 }, () => {
 			await assert.rejects(provider.put(key, raw, { overwrite: false }), {
 				name: 'StorageObjectExistsError',
 			});
+
 			await provider.put(key, raw);
 			await provider.delete(key);
 			assert.equal(await provider.exists(key), false);
@@ -216,6 +218,23 @@ describe('compiled application archive boundaries', { timeout: 15000 }, () => {
 			assert.deepEqual(await buffer(await storage.get(key)), zip);
 			await storage.delete(key);
 		}
+	});
+
+	it('exact deletion preserves same-prefix files and never recursively deletes directories', async () => {
+		await provider.put('exact/keyA', raw);
+		await provider.put('exact/keyA-suffix', binary);
+		await provider.deleteObject('exact/keyA');
+		assert.equal(await provider.exists('exact/keyA'), false);
+		assert.deepEqual(await buffer(await provider.get('exact/keyA-suffix')), binary);
+		await provider.put('exact/keyA/child', raw);
+		await assert.rejects(provider.deleteObject('exact/keyA'));
+		assert.deepEqual(await buffer(await provider.get('exact/keyA/child')), raw);
+		await storage.put('exact/encrypted', raw);
+		await storage.deleteObject('exact/encrypted');
+		assert.equal(await storage.exists('exact/encrypted'), false);
+		await provider.delete('exact/keyA');
+		assert.equal(await provider.exists('exact/keyA/child'), false);
+		assert.equal(await provider.exists('exact/keyA-suffix'), true);
 	});
 
 	it('still rejects Windows stream, device and normalized path aliases on Windows', async () => {
@@ -445,7 +464,8 @@ describe('compiled application archive boundaries', { timeout: 15000 }, () => {
 				}
 			}
 			assert.equal(count, 1);
-			assert.equal(await storage.exists(uploadedFilePath), false);
+			assert.equal(await storage.exists(uploadedFilePath), true);
+			await storage.deleteObject(uploadedFilePath);
 		}
 	});
 });

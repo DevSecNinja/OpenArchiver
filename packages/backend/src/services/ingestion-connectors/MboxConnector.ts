@@ -65,6 +65,11 @@ class MboxSplitter extends Transform {
 }
 
 export class MboxConnector implements IEmailConnector {
+	private fetchFailures = { count: 0, samples: [] as string[] };
+
+	public getFetchFailures() {
+		return this.fetchFailures;
+	}
 	private storage: StorageService;
 	private options: ConnectorOptions;
 
@@ -173,6 +178,9 @@ export class MboxConnector implements IEmailConnector {
 				const emailObject = await this.parseMessage(emailBuffer as Buffer, '');
 				yield emailObject;
 			} catch (error) {
+				this.fetchFailures.count++;
+				if (this.fetchFailures.samples.length < 5)
+					this.fetchFailures.samples.push('An MBOX message could not be parsed');
 				logger.error(
 					{ error, file: filePath },
 					'Failed to process a single message from mbox file. Skipping.'
@@ -183,17 +191,6 @@ export class MboxConnector implements IEmailConnector {
 			{ file: filePath, messagesFound },
 			'Finished splitting mbox file into individual messages.'
 		);
-
-		if (this.credentials.uploadedFilePath && !this.credentials.localFilePath) {
-			try {
-				await this.storage.delete(filePath);
-			} catch (error) {
-				logger.error(
-					{ error, file: filePath },
-					'Failed to delete mbox file after processing.'
-				);
-			}
-		}
 	}
 
 	/**

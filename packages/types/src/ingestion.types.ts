@@ -341,6 +341,8 @@ export interface IProcessMailboxJob {
 	userEmail: string;
 	/** ID of the SyncSession tracking this sync cycle's progress */
 	sessionId: string;
+	/** Internal snapshot for upload-only completion; never a live credentials lookup. */
+	uploadInputPath?: string;
 }
 
 export interface IPstProcessingJob {

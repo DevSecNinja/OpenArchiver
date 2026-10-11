@@ -6,6 +6,7 @@ import { enqueueMailboxJobs } from '../helpers/enqueueMailboxJobs';
 import { SyncSessionService } from '../../services/SyncSessionService';
 import { logger } from '../../config/logger';
 import { normalizeEmailAddress } from '../../helpers/emailAddress';
+import { uploadedInputPath } from '../../helpers/uploadCompletion';
 
 export default async (job: Job<IInitialImportJob>) => {
 	const { ingestionSourceId } = job.data;
@@ -54,10 +55,13 @@ export default async (job: Job<IInitialImportJob>) => {
 
 		// Phase 2: Create a session BEFORE dispatching any jobs to avoid a race condition
 		// where a process-mailbox job finishes before the session's totalMailboxes is set.
+		const inputPath = uploadedInputPath(source.credentials);
+		const declaredMailboxes = inputPath ? [...new Set(userEmails)] : userEmails;
 		const sessionId = await SyncSessionService.create(
 			ingestionSourceId,
 			userEmails.length,
-			true
+			true,
+			inputPath ? { inputPath, expectedMailboxes: userEmails } : undefined
 		);
 
 		logger.info(
@@ -65,7 +69,7 @@ export default async (job: Job<IInitialImportJob>) => {
 			'Dispatching process-mailbox jobs for initial import'
 		);
 
-		await enqueueMailboxJobs(ingestionSourceId, userEmails, sessionId);
+		await enqueueMailboxJobs(ingestionSourceId, declaredMailboxes, sessionId, inputPath);
 
 		logger.info({ ingestionSourceId, sessionId }, 'Finished dispatching initial import jobs');
 	} catch (error) {

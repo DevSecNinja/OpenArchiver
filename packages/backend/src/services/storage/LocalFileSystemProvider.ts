@@ -191,4 +191,14 @@ export class LocalFileSystemProvider implements IStorageProvider {
 	async exists(filePath: string): Promise<boolean> {
 		return (await this.resolveExistingPath(filePath)) !== null;
 	}
+
+	async deleteObject(filePath: string): Promise<void> {
+		const fullPath =
+			(await this.resolveExistingPath(filePath)) ?? (await this.resolvePath(filePath));
+		try {
+			await fs.unlink(fullPath);
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+		}
+	}
 }

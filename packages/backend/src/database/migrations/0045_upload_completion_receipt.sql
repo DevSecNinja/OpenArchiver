@@ -1,0 +1,1 @@
+ALTER TABLE "sync_sessions" ADD COLUMN "upload_receipt" jsonb;
