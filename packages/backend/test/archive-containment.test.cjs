@@ -7,7 +7,7 @@ const { Readable } = require('node:stream');
 const { buffer } = require('node:stream/consumers');
 const { createHash } = require('node:crypto');
 const { createRequire, wrap } = require('node:module');
-const { runInThisContext } = require('node:vm');
+const { runInThisContext, runInNewContext } = require('node:vm');
 const archiver = require('archiver');
 const { simpleParser } = require('mailparser');
 const { assertSafeRelativePath } = require('../dist/helpers/relativePath');
@@ -52,11 +52,9 @@ const unsafePaths = [
 	'safe/./file.eml',
 	'safe/../file.eml',
 	'safe//file.eml',
-	'safe/.. /file.eml',
-	'safe/trailing./file.eml',
-	'file.eml:stream',
 	'bad\0name.eml',
 ];
+const literalPaths = ['report:Q4.pdf', 'trailing.', 'trailing ', 'safe/.. /file.eml'];
 const unsafeError = { name: 'UnsafePathError' };
 let fixture;
 let root;
@@ -93,10 +91,10 @@ async function assertOperationsReject(key) {
 	}
 }
 
-async function upload(zip) {
+async function upload(zip, filename = 'fixture.zip') {
 	const body = Buffer.concat([
 		Buffer.from(
-			'--upload\r\nContent-Disposition: form-data; name="file"; filename="fixture.zip"\r\n' +
+			`--upload\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\n` +
 				'Content-Type: application/zip\r\n\r\n'
 		),
 		zip,
@@ -195,6 +193,48 @@ describe('compiled application archive boundaries', { timeout: 15000 }, () => {
 		for (const key of unsafePaths) await assertOperationsReject(key);
 		assert.equal(await fs.readFile(sentinel, 'utf8'), 'owned sentinel');
 		assert.deepEqual(await fs.readdir(root), []);
+	});
+
+	it('preserves literal POSIX names for existing keys and new uploads', async () => {
+		for (const name of literalPaths) {
+			const key = `legacy/${name}`;
+			await fs.mkdir(path.dirname(path.join(root, key)), { recursive: true });
+			await fs.writeFile(path.join(root, key), raw);
+			assert.equal(await provider.exists(key), true);
+			assert.deepEqual(await buffer(await provider.get(key)), raw);
+			await assert.rejects(provider.put(key, raw, { overwrite: false }), {
+				name: 'StorageObjectExistsError',
+			});
+			await provider.put(key, raw);
+			await provider.delete(key);
+			assert.equal(await provider.exists(key), false);
+		}
+		const zip = await makeZip('reports:Q4/trailing. /message.eml');
+		for (const filename of ['report:Q4.zip', 'archive.zip.', 'archive.zip ']) {
+			const key = await upload(zip, filename);
+			assert.ok(key.endsWith(`-${filename}`));
+			assert.deepEqual(await buffer(await storage.get(key)), zip);
+			await storage.delete(key);
+		}
+	});
+
+	it('still rejects Windows stream, device and normalized path aliases on Windows', async () => {
+		const filename = require.resolve('../dist/helpers/relativePath');
+		const module = { exports: {} };
+		runInNewContext(wrap(await fs.readFile(filename, 'utf8')), {
+			process: { platform: 'win32' },
+		})(
+			module.exports,
+			() => assert.fail('Unexpected import'),
+			module,
+			filename,
+			path.dirname(filename)
+		);
+		const validate = module.exports.assertSafeRelativePath;
+		for (const value of [...unsafePaths, ...literalPaths, 'safe/NUL.txt', 'safe/COM1']) {
+			assert.throws(() => validate(value), unsafeError, value);
+		}
+		assert.doesNotThrow(() => validate('inbox/caf\u00e9/message.eml'));
 	});
 
 	it('rejects ingestion traversal before reading mail or reaching database and cleans the temp file', async () => {

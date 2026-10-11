@@ -149,11 +149,14 @@ attachment rows. No PST import coverage is implied by these synthetic EML/ZIP fi
 ### Archive path constraints
 
 ZIP entry names and connector folder paths must be relative, slash-separated paths without empty,
-dot or dot-dot components, backslashes, colons, NULs, or trailing dots/spaces in a component.
-An optional trailing slash denotes a directory. These portable constraints also reject absolute,
-drive-relative, UNC and Windows alias forms before ingestion adds a source namespace. Valid Unicode
-names remain supported. Unsafe ZIP names abort the import with an explicit error; previously
-processed entries are not rolled back.
+dot or dot-dot components, backslashes or NULs. Absolute, drive-relative and UNC paths are rejected
+before ingestion adds a source namespace. An optional trailing slash denotes a directory.
+On POSIX hosts (including the Linux container), colons and trailing dots/spaces are literal filename
+characters: existing keys remain readable and new uploads, folder names, message IDs and attachments
+retain them without changing original metadata. On Windows hosts, stream/device names and trailing
+dot/space aliases are rejected because they do not identify ordinary literal files. Valid Unicode
+names remain supported. Unsafe ZIP names abort the import explicitly; previously processed entries
+are not rolled back.
 
 Local storage applies the same constraints to `put`, `get`, `delete`, and `exists`, including each
 NFC/NFD lookup candidate, and refuses symlink components below the configured root. Existing archives
@@ -162,6 +165,19 @@ are trusted; these checks are **not protection against concurrent filesystem mut
 host-managed mount/hard-link changes. Restrict filesystem write access to the archive service and trusted
 administrators. Conditional writes retain the existing atomic hard-link publish behavior and its
 documented non-atomic claim fallback on filesystems without hard links.
+
+Default-mode ingestion stores attachment content before publishing an email, then inserts the email
+row and all attachment links in one database transaction. A storage or link-insert failure is reported,
+not treated as a duplicate: successful attachment records remain reusable, while no incomplete email
+row is visible to the next retry's deduplication check. This does not repair historical partial imports.
+
+`ingestion-attachments.test.cjs` uses the same explicit `STORAGE_AUTH_TEST_DATABASE_URL` and isolated
+PostgreSQL database pattern as the authorization tests below. It calls the compiled EMLConnector,
+IngestionService and encrypted storage with original colon/trailing-dot/space names in both preservation
+modes, verifies retrieved bytes and same-source deduplication, and injects storage and database-link
+failures before retry. Queue/provider orchestration is blocked; no external mailbox is contacted.
+Hosted `pnpm test:oss` runs it with the existing PostgreSQL service. Without an explicit local test URL
+it is skipped, not counted as integration proof.
 
 ### Backend authorization and HTTP regression checks
 

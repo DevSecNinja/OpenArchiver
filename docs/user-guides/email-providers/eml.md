@@ -9,8 +9,10 @@ To ensure a successful import, you should compress your .eml files to one zip fi
 - **Structure:** The zip file can contain any number of `.eml` files, organized in any folder structure. The folder structure will be preserved in OpenArchiver, so you can use it to organize your emails.
 - **Compression:** The zip file should be compressed using standard zip compression.
 - **Safe paths:** Entry names must be relative, slash-separated paths. Absolute or drive paths,
-  backslashes, `.`/`..` components, empty components, colons, NULs, and components ending in a dot or
-  space are rejected. A trailing slash for a directory is allowed, and Unicode names are supported.
+  backslashes, `.`/`..` components, empty components and NULs are rejected. A trailing slash for a
+  directory is allowed, and Unicode names are supported. On Linux/POSIX hosts, colons and trailing
+  dots/spaces are preserved as literal characters. Windows hosts reject stream/device names and
+  trailing dot/space aliases rather than interpreting them as a different file.
   An unsafe name stops the import with an error; messages processed before that error are not rolled back.
 
 Here's an example of a valid folder structure:

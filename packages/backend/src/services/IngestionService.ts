@@ -1846,77 +1846,73 @@ export class IngestionService {
 				messageIdHeader: IngestionService.messageIdHeaderOf(email),
 			});
 
-			const [archivedEmail] = await db
-				.insert(archivedEmails)
-				.values({
-					ingestionSourceId: effectiveSource.id,
-					userEmail,
-					threadId: email.threadId,
-					messageIdHeader: messageId,
-					providerMessageId,
-					sentAt: email.receivedAt,
-					subject: email.subject,
-					senderName: email.from[0]?.name,
-					senderEmail: email.from[0]?.address || UNKNOWN_SENDER,
-					recipients: {
-						to: email.to,
-						cc: email.cc,
-						bcc: email.bcc ?? [],
-					},
-					storagePath: emailStoragePath,
-					storageHashSha256: emailHash,
-					sizeBytes: emailSize,
-					hasAttachments: email.attachments.length > 0,
-					// Delivering source, not the merge root — see the reference-row insert above.
-					isJournaled: source.provider === 'smtp_journaling',
-					path: email.path,
-					tags: email.tags,
-				})
-				.returning();
-
-			if (email.attachments.length > 0) {
-				// Each attachment stores and links itself, and does so as soon as its own id is
-				// known. Collecting every id first and writing the links in one insert at the end
-				// read better but lost data: an email whose last attachment failed committed NO
-				// links at all, while its row was already inserted with has_attachments = true and
-				// the per-mailbox dedup gate would skip the email on every later sync — leaving it
-				// permanently showing attachments it cannot list.
-				//
-				// Bounded parallelism because each of these is a storage round trip. Two
-				// attachments of the same content resolve through one cached promise, so the
-				// second link insert simply finds its row already there.
-				const results = await mapWithConcurrency(
-					email.attachments,
-					ATTACHMENT_STORE_CONCURRENCY,
-					async (attachment) => {
-						const attachmentHash = createHash('sha256')
-							.update(attachment.content)
-							.digest('hex');
-						const attachmentId = await this.getOrCreateAttachmentId(
-							attachmentHash,
-							effectiveSource.id,
-							attachment,
-							storage
-						);
-						await db
-							.insert(emailAttachments)
-							.values({ emailId: archivedEmail.id, attachmentId })
-							.onConflictDoNothing();
-					}
-				);
-
-				// Surfaced after the successful links are committed, so partial progress survives
-				// while the email is still reported as failed — same outcome the sequential loop
-				// produced, and what the caller's error accounting expects.
-				const failure = results.find((r) => r.status === 'rejected');
-				if (failure?.status === 'rejected') {
-					throw failure.reason;
+			// Store attachments before publishing a dedup-visible email. Successful attachment
+			// records can be reused on retry, but a failed write must not make the email look complete.
+			const results = await mapWithConcurrency(
+				email.attachments,
+				ATTACHMENT_STORE_CONCURRENCY,
+				async (attachment) => {
+					const attachmentHash = createHash('sha256')
+						.update(attachment.content)
+						.digest('hex');
+					return this.getOrCreateAttachmentId(
+						attachmentHash,
+						effectiveSource.id,
+						attachment,
+						storage
+					);
 				}
+			);
+			const attachmentIds: string[] = [];
+			for (const result of results) {
+				if (result.status === 'rejected') {
+					throw result.reason;
+				}
+				attachmentIds.push(result.value);
 			}
 
-			return {
-				archivedEmailId: archivedEmail.id,
-			};
+			// Publish the email and all its links together; link failures must also remain retryable.
+			return await db.transaction(async (tx) => {
+				const [archivedEmail] = await tx
+					.insert(archivedEmails)
+					.values({
+						ingestionSourceId: effectiveSource.id,
+						userEmail,
+						threadId: email.threadId,
+						messageIdHeader: messageId,
+						providerMessageId,
+						sentAt: email.receivedAt,
+						subject: email.subject,
+						senderName: email.from[0]?.name,
+						senderEmail: email.from[0]?.address || UNKNOWN_SENDER,
+						recipients: {
+							to: email.to,
+							cc: email.cc,
+							bcc: email.bcc ?? [],
+						},
+						storagePath: emailStoragePath,
+						storageHashSha256: emailHash,
+						sizeBytes: emailSize,
+						hasAttachments: email.attachments.length > 0,
+						// Delivering source, not the merge root — see the reference-row insert above.
+						isJournaled: source.provider === 'smtp_journaling',
+						path: email.path,
+						tags: email.tags,
+					})
+					.returning();
+				if (attachmentIds.length > 0) {
+					await tx
+						.insert(emailAttachments)
+						.values(
+							attachmentIds.map((attachmentId) => ({
+								emailId: archivedEmail.id,
+								attachmentId,
+							}))
+						)
+						.onConflictDoNothing();
+				}
+				return { archivedEmailId: archivedEmail.id };
+			});
 		} catch (error) {
 			logger.error({
 				message: `Failed to process email ${email.id} for source ${source.id}`,
