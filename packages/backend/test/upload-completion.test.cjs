@@ -949,6 +949,80 @@ test(
 		);
 
 		await t.test(
+			'stale-worker recovery reaches complete replacement import and input disposal',
+			async (t) => {
+				for (const mode of ['initial', 'continuous']) {
+					await t.test(mode, async () => {
+						const mailboxes = ['a@example.test', 'b@example.test', 'c@example.test'];
+						const bytes = await zipBytes();
+						const ctx = await setup(mailboxes, 'eml_import', bytes);
+						makeConnector = (source) => {
+							const connector = new EMLConnector(source.credentials);
+							connector.listAllUsers = async function* () {
+								for (const primaryEmail of mailboxes) yield { primaryEmail };
+							};
+							return connector;
+						};
+						await worker(ctx, mailboxes[0]);
+						await db
+							.update(schema.ingestionSources)
+							.set({
+								status: mode === 'initial' ? 'importing' : 'syncing',
+								lastSyncStartedAt: new Date(0),
+							})
+							.where(eq(schema.ingestionSources.id, ctx.source.id));
+						await db
+							.update(schema.syncSessions)
+							.set({ lastActivityAt: new Date(0) })
+							.where(eq(schema.syncSessions.id, ctx.sessionId));
+						const original = (await sessionRow(ctx.sessionId)).uploadReceipt;
+						await SyncSessionService.cleanStaleSessions(1000);
+						const recovered = (await sessionRow(ctx.sessionId)).uploadReceipt;
+						assert.equal((await sourceRow(ctx.source.id)).status, 'error');
+						assert.deepEqual(await buffer(await storage.get(ctx.inputPath)), bytes);
+						await worker(ctx, mailboxes[1]);
+						const lateResults = (await sessionRow(ctx.sessionId)).uploadReceipt.results;
+						const before = queued.length;
+						const master = mode === 'initial' ? initialImport : continuousSync;
+						await master({ data: { ingestionSourceId: ctx.source.id } });
+						const retry = queued
+							.slice(before)
+							.filter((job) => job.name === 'process-mailbox');
+						assert.equal(retry.length, 3);
+						const nextId = retry[0].data.sessionId;
+						assert.notEqual(nextId, ctx.sessionId);
+						await worker(ctx, mailboxes[1]);
+						assert.deepEqual((await sessionRow(nextId)).uploadReceipt.results, []);
+						assert.equal(
+							(await sourceRow(ctx.source.id)).status,
+							mode === 'initial' ? 'importing' : 'syncing'
+						);
+						for (const [index, job] of retry.entries()) {
+							await processMailboxProcessor(job);
+							if (index < retry.length - 1) {
+								assert.equal(
+									await IngestionService.releaseCompletedUpload(nextId),
+									false
+								);
+								assert.deepEqual(
+									await buffer(await storage.get(ctx.inputPath)),
+									bytes
+								);
+							}
+						}
+						await finishSession({ ...ctx, sessionId: nextId });
+						assert.equal(await storage.exists(ctx.inputPath), false);
+						assert.equal(await sessionRow(nextId), undefined);
+						assert.equal(await sessionRow(ctx.sessionId), undefined);
+						assert.deepEqual(recovered, { ...original, dispatchAborted: true });
+						assert.deepEqual(lateResults, original.results);
+						assert.equal((await sourceRow(ctx.source.id)).status, 'imported');
+					});
+				}
+			}
+		);
+
+		await t.test(
 			'genuinely stale current uploads retain proof and input but become retryable',
 			async () => {
 				const ctx = await setup(['a@example.test', 'b@example.test']);
@@ -964,7 +1038,10 @@ test(
 				const before = (await sessionRow(ctx.sessionId)).uploadReceipt;
 				await SyncSessionService.cleanStaleSessions(1000);
 				assert.equal((await IngestionService.findById(ctx.source.id)).status, 'error');
-				assert.deepEqual((await sessionRow(ctx.sessionId)).uploadReceipt, before);
+				assert.deepEqual((await sessionRow(ctx.sessionId)).uploadReceipt, {
+					...before,
+					dispatchAborted: true,
+				});
 				assert.ok(await storage.exists(ctx.inputPath));
 				const retry = await IngestionService.claimForImport(ctx.source.id);
 				assert.ok(retry);

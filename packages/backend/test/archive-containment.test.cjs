@@ -45,8 +45,6 @@ const unsafePaths = [
 	'open-archiver/source/emails/../../other-source/file.eml',
 	'/absolute.eml',
 	'//server/share/file.eml',
-	'C:/absolute.eml',
-	'C:relative.eml',
 	'\\\\server\\share\\file.eml',
 	'safe\\..\\file.eml',
 	'safe/./file.eml',
@@ -54,7 +52,16 @@ const unsafePaths = [
 	'safe//file.eml',
 	'bad\0name.eml',
 ];
-const literalPaths = ['report:Q4.pdf', 'trailing.', 'trailing ', 'safe/.. /file.eml'];
+const windowsDrivePaths = ['C:/absolute.eml', 'C:relative.eml'];
+const literalPaths = [
+	'report:Q4.pdf',
+	'a:report.eml',
+	'a:folder/a:report.eml',
+	...windowsDrivePaths,
+	'trailing.',
+	'trailing ',
+	'safe/.. /file.eml',
+];
 const unsafeError = { name: 'UnsafePathError' };
 let fixture;
 let root;
@@ -237,6 +244,17 @@ describe('compiled application archive boundaries', { timeout: 15000 }, () => {
 		assert.equal(await provider.exists('exact/keyA-suffix'), true);
 	});
 
+	it('stores single-letter colon names literally at the POSIX storage root', async () => {
+		for (const key of ['a:report.eml', 'a:folder/a:report.eml']) {
+			await storage.put(key, raw);
+			assert.equal(await storage.exists(key), true);
+			assert.deepEqual(await buffer(await storage.get(key)), raw);
+			assert.notDeepEqual(await fs.readFile(path.join(root, key)), raw);
+			await storage.deleteObject(key);
+			assert.equal(await storage.exists(key), false);
+		}
+	});
+
 	it('still rejects Windows stream, device and normalized path aliases on Windows', async () => {
 		const filename = require.resolve('../dist/helpers/relativePath');
 		const module = { exports: {} };
@@ -290,7 +308,7 @@ describe('compiled application archive boundaries', { timeout: 15000 }, () => {
 			await assert.rejects(fs.access(tempFilePath), { code: 'ENOENT' });
 		}
 		assert.equal(boundary.reads(), 0);
-		for (const valid of [undefined, '', 'inbox/caf\u00e9/']) {
+		for (const valid of [undefined, '', 'inbox/caf\u00e9/', 'a:folder']) {
 			const tempFilePath = path.join(fixture, 'valid-path-message.eml');
 			await fs.writeFile(tempFilePath, raw);
 			const result = await boundary.service.processEmail(
@@ -302,7 +320,7 @@ describe('compiled application archive boundaries', { timeout: 15000 }, () => {
 			assert.match(result.message, /Unexpected ingestion file read/);
 			await assert.rejects(fs.access(tempFilePath), { code: 'ENOENT' });
 		}
-		assert.equal(boundary.reads(), 3);
+		assert.equal(boundary.reads(), 4);
 	});
 
 	it('rejects directory, file, dangling and cross-source symlink components', async () => {
@@ -404,8 +422,6 @@ describe('compiled application archive boundaries', { timeout: 15000 }, () => {
 			'inbox/../message.eml',
 			'inbox/./message.eml',
 			'/absolute/message.eml',
-			'C:/absolute/message.eml',
-			'C:relative.eml',
 			'inbox\\..\\message.eml',
 			'\\\\server\\share\\message.eml',
 			'__MACOSX/../../message.eml',

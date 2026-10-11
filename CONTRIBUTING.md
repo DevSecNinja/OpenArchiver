@@ -220,11 +220,17 @@ Referenced objects are retained; undecipherable relevant credentials fail cleanu
 
 A partial mailbox-enqueue failure marks only that upload dispatch aborted in the existing receipt.
 Its original input and closed mailbox set remain protected; late delivery/results cannot complete it.
+A genuinely stale current upload is marked aborted under the same fresh source/session guards when
+recovery makes its source retryable. It retains its original input claim until matching replacement.
 A retry atomically publishes a fresh receipt for the same source, input and complete mailbox set before
 retiring matching aborted receipts. Repointed, unknown or mismatched claims are retained, not guessed.
 Only the replacement's complete canonical successes permit release. Keyed upload finalizers remove
 both successful and failed terminal job records so the stale-session sweep can retry the same ID after
 cleanup or receipt-marking failure.
+
+POSIX single-letter colon names such as `a:report.eml` and `a:folder` remain literal relative paths
+through ZIP validation, source-path composition and local storage. Windows-only colon checks still
+reject drive and alternate-stream forms; traversal, absolute-path and symlink checks are unchanged.
 
 The optional `UPLOAD_QUEUE_TEST_HOST` / `UPLOAD_QUEUE_TEST_PASSWORD` environment variables enable
 real BullMQ/Redis purge and same-ID finalizer regressions in `upload-completion.test.cjs`. The local

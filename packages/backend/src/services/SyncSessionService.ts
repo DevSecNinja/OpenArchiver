@@ -751,6 +751,10 @@ export class SyncSessionService {
 				keys: [],
 				run: async () => {
 					await tx
+						.update(syncSessions)
+						.set({ uploadReceipt: { ...receipt, dispatchAborted: true } })
+						.where(eq(syncSessions.id, current.id));
+					await tx
 						.update(ingestionSources)
 						.set({
 							status: 'error',

@@ -193,11 +193,11 @@ test(
 			mailbox = 'fixture@example.test',
 			ingestionService = service,
 			storageService = storage,
-			providerId
+			providerId,
+			name = 'reports:Q4/trailing. /message.eml'
 		) {
 			const zip = archiver('zip');
 			const result = buffer(zip);
-			const name = 'reports:Q4/trailing. /message.eml';
 			const placeholder = 'x'.repeat(Buffer.byteLength(name));
 			zip.append(raw, { name: placeholder });
 			const [bytes] = await Promise.all([result, zip.finalize()]);
@@ -278,6 +278,55 @@ test(
 				assert.equal(links.length, names.length);
 			}
 		}
+
+		await t.test(
+			'single-letter colon ZIP names reach real POSIX archive persistence',
+			async (t) => {
+				for (const entry of ['a:report.eml', 'a:folder/a:report.eml']) {
+					await t.test(entry, async () => {
+						const source = await createSource(true);
+						const raw = message(randomUUID());
+						const result = await ingest(
+							source,
+							raw,
+							'fixture@example.test',
+							service,
+							storage,
+							undefined,
+							entry
+						);
+						assert.ok(result.archivedEmailId);
+						const [row] = await emails(source);
+						assert.equal(row.path, entry.includes('/') ? 'a:folder' : '');
+						if (entry.includes('/')) {
+							assert.ok(
+								row.storagePath.startsWith(
+									`open-archiver/${source.id}/emails/a:folder`
+								)
+							);
+						}
+						assert.deepEqual(await buffer(await storage.get(row.storagePath)), raw);
+						assert.equal(
+							createHash('sha256').update(raw).digest('hex'),
+							row.storageHashSha256
+						);
+						assert.equal(
+							await ingest(
+								source,
+								raw,
+								'fixture@example.test',
+								service,
+								storage,
+								undefined,
+								entry
+							),
+							null
+						);
+						assert.equal((await emails(source)).length, 1);
+					});
+				}
+			}
+		);
 
 		await t.test(
 			'retains original filenames and bytes in both preservation modes on retry',
