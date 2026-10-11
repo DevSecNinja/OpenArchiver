@@ -157,11 +157,25 @@ test(
 				assert.equal(email.to[0].address, 'recipient@example.invalid');
 				assert.equal(email.subject, 'IMAP caf\u00e9');
 				assert.equal(email.body.trim(), 'Synthetic IMAP body.');
-				assert.match(email.html, /cid:fixture-image/);
+				// simpleParser resolves CID links by default; raw EML above stays byte-identical.
+				assert.equal(
+					email.html.trim(),
+					`<p>Synthetic IMAP body.</p><img src="data:image/png;base64,${inline.toString('base64')}">`
+				);
+				const imageData = email.html.match(/src="data:image\/png;base64,([^"]+)"/);
+				assert.ok(imageData);
+				assert.deepEqual(Buffer.from(imageData[1], 'base64'), inline);
 				assert.equal(email.attachments.length, 2);
+				assert.deepEqual(
+					email.attachments.map((attachment) => attachment.filename).sort(),
+					['fixture.bin', 'inline.png']
+				);
 				for (const attachment of email.attachments) {
 					const original = attachment.filename === 'fixture.bin' ? binary : inline;
-					assert.ok(['fixture.bin', 'inline.png'].includes(attachment.filename));
+					assert.equal(
+						attachment.contentType,
+						attachment.filename === 'fixture.bin' ? 'application/octet-stream' : 'image/png'
+					);
 					assert.equal(attachment.size, original.length);
 					assert.deepEqual(
 						attachment.content,
