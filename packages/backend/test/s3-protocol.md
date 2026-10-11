@@ -86,9 +86,21 @@ the preserved S3 patch reapplied with a clean Git three-way merge. The main
 HTTP/authorization dependency updates and tests were retained. A structural
 comparison confirms that the resulting lockfile differs from that main only in
 the SDK dependency closure, with no manual lockfile resolution or age exceptions.
-**The integrated graph has not been rebuilt or rescanned locally.** Hosted source
-validation is pending; the results and residual counts below remain explicitly
-old-base fixture evidence, not results for the integrated graph.
+Hosted [run 38082652745](https://github.com/DevSecNinja/OpenArchiver/actions/runs/38082652745)
+subsequently passed for head `a158ba4`: OSS build and 32 tests, with no failures or
+skips, including all five S3 cases and PostgreSQL storage authorization.
+That integrated graph was not rescanned locally.
+
+On October 11, the branch was refreshed with actual `main` at `4c0805de` using a
+conflict-free Git merge. Main's mail/parser, frontend, and HTTP dependency updates
+and tests were retained. Structural checks confirm that only the original SDK
+dependency closure differs from main, and all 37 updated SDK package/snapshot
+records remain identical to `a158ba4`. The provider and protocol tests are unchanged.
+No manual lockfile edits, package-manager reconciliation, or age exceptions were
+needed. Node 22 syntax checks passed; **fresh hosted validation of this new merge
+is pending publication**. No new installation, build, fixture, or scan was run.
+The results and residual counts below remain explicitly old-base fixture evidence,
+not results for the latest integrated graph.
 
 | Check                   | Result                                                                                                                                                             |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

@@ -6,7 +6,16 @@
 		"base": "bccf8768c94b7420088d21dc29a6d76f0f59ff3d",
 		"lockfileSha256": "cafc10865fe8e718be9eac3382942acd85cb518cc8c1991586f1c6830163a7f7",
 		"method": "Clean Git three-way application of package-manager-generated SDK changes; main HTTP dependency graph preserved",
-		"validation": "Not rebuilt or rescanned locally; hosted source validation pending. All scan results below belong to validatedBase, not subsequentIntegration.base."
+		"validation": "Hosted run 38082652745 passed for head a158ba4bc5443773ab3dc0a07d71c2c068c7024c: OSS build and 32 tests, none failed or skipped. Not rescanned locally; all scan results below belong to validatedBase.",
+		"hostedRun": "https://github.com/DevSecNinja/OpenArchiver/actions/runs/38082652745"
+	},
+	"currentMainIntegration": {
+		"preparedAt": "2026-10-11",
+		"base": "4c0805de2f5f68cbbd8b2bd90e8fc28a0389aeef",
+		"lockfileSha256": "48b4daafb08e047015e8428cec54da656a279cfbe850b0956fefcbe75338b5a2",
+		"method": "Conflict-free Git merge preserving main's mail/parser, frontend, and HTTP dependencies; no manual lockfile edits",
+		"scopeProof": "All 37 SDK closure package/snapshot records are unchanged from a158ba4; only the original SDK closure differs from main; all other main importer/package/snapshot records and package-manager lock preserved",
+		"validation": "Node 22 syntax and structural dependency checks passed. Fresh hosted build/tests pending publication. No new local installation, build, fixture, or scan; historical results do not validate this full integrated graph."
 	},
 	"nodeImage": "node:22.23.3-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402",
 	"fixtureImageId": "sha256:825919941e3fdeb8d6e7705959466b7626481f95b32fea019dbac847ab79b0e8",

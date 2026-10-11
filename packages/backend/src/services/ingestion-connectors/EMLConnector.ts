@@ -16,6 +16,7 @@ import { createHash } from 'crypto';
 import { join, dirname } from 'path';
 import { createReadStream, promises as fs, createWriteStream } from 'fs';
 import * as yauzl from 'yauzl';
+import { assertSafeRelativePath } from '../../helpers/relativePath';
 
 const streamToBuffer = (stream: Readable): Promise<Buffer> => {
 	return new Promise((resolve, reject) => {
@@ -167,25 +168,30 @@ export class EMLConnector implements IEmailConnector {
 		// Create an async iterator for zip entries
 		const entryIterator = this.zipEntryGenerator(zipfile);
 
-		for await (const { entry, openReadStream } of entryIterator) {
-			const fileName = entry.fileName.toString();
-			if (fileName.startsWith('__MACOSX/') || /\/$/.test(fileName)) {
-				continue;
-			}
+		try {
+			for await (const { entry, openReadStream } of entryIterator) {
+				const fileName = entry.fileName.toString();
+				assertSafeRelativePath(fileName);
+				if (fileName.startsWith('__MACOSX/') || /\/$/.test(fileName)) {
+					continue;
+				}
 
-			if (fileName.endsWith('.eml')) {
-				try {
-					const readStream = await openReadStream();
-					const relativePath = dirname(fileName) === '.' ? '' : dirname(fileName);
-					const emailObject = await this.parseMessage(readStream, relativePath);
-					yield emailObject;
-				} catch (error) {
-					logger.error(
-						{ error, file: fileName },
-						'Failed to process a single EML file from zip. Skipping.'
-					);
+				if (fileName.endsWith('.eml')) {
+					try {
+						const readStream = await openReadStream();
+						const relativePath = dirname(fileName) === '.' ? '' : dirname(fileName);
+						const emailObject = await this.parseMessage(readStream, relativePath);
+						yield emailObject;
+					} catch (error) {
+						logger.error(
+							{ error, file: fileName },
+							'Failed to process a single EML file from zip. Skipping.'
+						);
+					}
 				}
 			}
+		} finally {
+			zipfile.close();
 		}
 	}
 
