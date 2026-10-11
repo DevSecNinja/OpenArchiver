@@ -11,6 +11,7 @@ import { uploadedInputPath } from '../../helpers/uploadCompletion';
 export default async (job: Job<IInitialImportJob>) => {
 	const { ingestionSourceId } = job.data;
 	logger.info({ ingestionSourceId }, 'Starting initial import master job');
+	let inputPath: string | undefined;
 
 	try {
 		// One conditional UPDATE, for the same reason continuous-sync uses one: a second import
@@ -25,6 +26,7 @@ export default async (job: Job<IInitialImportJob>) => {
 			return;
 		}
 
+		inputPath = uploadedInputPath(source.credentials);
 		const connector = EmailProviderFactory.createConnector(source);
 
 		// Phase 1: Collect user emails from the provider (async generator — no full buffering
@@ -55,7 +57,6 @@ export default async (job: Job<IInitialImportJob>) => {
 
 		// Phase 2: Create a session BEFORE dispatching any jobs to avoid a race condition
 		// where a process-mailbox job finishes before the session's totalMailboxes is set.
-		const inputPath = uploadedInputPath(source.credentials);
 		const declaredMailboxes = inputPath ? [...new Set(userEmails)] : userEmails;
 		const sessionId = await SyncSessionService.create(
 			ingestionSourceId,
@@ -74,10 +75,16 @@ export default async (job: Job<IInitialImportJob>) => {
 		logger.info({ ingestionSourceId, sessionId }, 'Finished dispatching initial import jobs');
 	} catch (error) {
 		logger.error({ err: error, ingestionSourceId }, 'Error in initial import master job');
-		await IngestionService.update(ingestionSourceId, {
-			status: 'error',
-			lastSyncStatusMessage: `Initial import failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
-		});
+		await IngestionService.update(
+			ingestionSourceId,
+			{
+				status: 'error',
+				lastSyncStatusMessage: `Initial import failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+			},
+			undefined,
+			undefined,
+			inputPath
+		);
 		throw error;
 	}
 };

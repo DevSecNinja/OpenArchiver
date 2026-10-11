@@ -6,6 +6,7 @@ const { tmpdir } = require('node:os');
 const Module = require('node:module');
 const { buffer } = require('node:stream/consumers');
 const { test } = require('node:test');
+const { once } = require('node:events');
 const postgres = require('postgres');
 const { drizzle } = require('drizzle-orm/postgres-js');
 const { migrate } = require('drizzle-orm/postgres-js/migrator');
@@ -24,7 +25,7 @@ test(
 	'upload completion requires durable canonical mailbox and input proof',
 	{
 		skip: databaseUrl ? false : 'Set STORAGE_AUTH_TEST_DATABASE_URL to run PostgreSQL coverage',
-		timeout: 120_000,
+		timeout: 180_000,
 	},
 	async (t) => {
 		const url = new URL(databaseUrl);
@@ -75,8 +76,8 @@ test(
 		const queued = [];
 		provide('../dist/jobs/queues', {
 			ingestionQueue: {
-				add: async (name, data) => {
-					queued.push({ name, data });
+				add: async (name, data, opts) => {
+					queued.push({ name, data, opts });
 				},
 				addBulk: async (jobs) => {
 					queued.push(...jobs);
@@ -89,12 +90,15 @@ test(
 		provide('../dist/services/EmailProviderFactory', {
 			EmailProviderFactory: { createConnector: (source) => makeConnector(source) },
 		});
+		let confirmSearch = async () => {};
 		provide('../dist/services/SearchService', {
 			SearchService: class {
 				async deleteDocumentsByFilter() {
 					return { taskUid: 1 };
 				}
-				async waitForTask() {}
+				async waitForTask() {
+					await confirmSearch();
+				}
 			},
 		});
 		provide('../dist/jobs/helpers/workerLiveness', {});
@@ -113,6 +117,8 @@ test(
 		} = require('../dist/jobs/processors/process-mailbox.processor');
 		const finish = require('../dist/jobs/processors/sync-cycle-finished.processor').default;
 		const initialImport = require('../dist/jobs/processors/initial-import.processor').default;
+		const continuousSync = require('../dist/jobs/processors/continuous-sync.processor').default;
+		const { ingestionQueue } = require('../dist/jobs/queues');
 		const { JobsService } = require('../dist/services/JobsService');
 		const storage = new StorageService();
 		const storageLocks = require('../dist/services/storage/locking');
@@ -225,6 +231,226 @@ test(
 				storageLocks.withStorageLocks = original;
 			}
 			return pending;
+		}
+
+		if (process.env.UPLOAD_QUEUE_TEST_HOST) {
+			const { Queue, Worker } = require('bullmq');
+			const connection = {
+				host: process.env.UPLOAD_QUEUE_TEST_HOST,
+				port: 6379,
+				password: process.env.UPLOAD_QUEUE_TEST_PASSWORD,
+			};
+			const queueName = `upload-proof-${randomUUID()}`;
+			const queue = new Queue(queueName, {
+				connection,
+				defaultJobOptions: {
+					attempts: 1,
+					removeOnComplete: { count: 1000 },
+					removeOnFail: { count: 5000 },
+				},
+			});
+			const originalQueue = { ...ingestionQueue };
+			Object.assign(ingestionQueue, {
+				add: queue.add.bind(queue),
+				getJobs: queue.getJobs.bind(queue),
+				getJob: queue.getJob.bind(queue),
+			});
+			try {
+				await queue.waitUntilReady();
+				for (const failure of ['search', 'database', 'reference']) {
+					await t.test(
+						`real queued auth_success import survives ${failure} purge refusal`,
+						async () => {
+							const inputPath = `open-archiver/tmp/${randomUUID()}.zip`;
+							await storage.put(inputPath, raw);
+							const source = await sourceFor(inputPath);
+							await db
+								.update(schema.ingestionSources)
+								.set({ status: 'auth_success' })
+								.where(eq(schema.ingestionSources.id, source.id));
+							const job = await queue.add('initial-import', {
+								ingestionSourceId: source.id,
+							});
+							let outside;
+							if (failure === 'reference') {
+								outside = await sourceFor(inputPath);
+								const [attachment] = await db
+									.insert(schema.attachments)
+									.values({
+										ingestionSourceId: source.id,
+										filename: 'referenced.bin',
+										storagePath: inputPath,
+										contentHashSha256: '0'.repeat(64),
+										sizeBytes: raw.length,
+									})
+									.returning();
+								const [carrier] = await db
+									.insert(schema.archivedEmails)
+									.values({
+										ingestionSourceId: outside.id,
+										senderEmail: 'sender@example.test',
+										userEmail: 'reader@example.test',
+										sentAt: new Date(),
+										storagePath: inputPath,
+										storageHashSha256: '0'.repeat(64),
+										sizeBytes: raw.length,
+									})
+									.returning();
+								await db
+									.insert(schema.emailAttachments)
+									.values({ emailId: carrier.id, attachmentId: attachment.id });
+							}
+							if (failure === 'search')
+								confirmSearch = async () => {
+									throw new Error('Synthetic purge search failure');
+								};
+							if (failure === 'database') {
+								await client`CREATE FUNCTION reject_source_delete() RETURNS trigger LANGUAGE plpgsql AS $$
+							BEGIN RAISE EXCEPTION 'Synthetic purge database failure'; END $$`;
+								await client`CREATE TRIGGER reject_source_delete BEFORE DELETE ON ingestion_sources
+							FOR EACH ROW EXECUTE FUNCTION reject_source_delete()`;
+							}
+							try {
+								await assert.rejects(
+									IngestionService.delete(
+										source.id,
+										{ id: randomUUID() },
+										'fixture'
+									)
+								);
+								assert.equal((await sourceRow(source.id)).status, 'auth_success');
+								assert.ok(
+									await queue.getJob(job.id),
+									'Failed purge must preserve queued initial import'
+								);
+								assert.deepEqual(await buffer(await storage.get(inputPath)), raw);
+							} finally {
+								confirmSearch = async () => {};
+								if (failure === 'database') {
+									await client`DROP TRIGGER reject_source_delete ON ingestion_sources`;
+									await client`DROP FUNCTION reject_source_delete()`;
+								}
+								if (outside)
+									await db
+										.delete(schema.ingestionSources)
+										.where(eq(schema.ingestionSources.id, outside.id));
+								await IngestionService.delete(
+									source.id,
+									{ id: randomUUID() },
+									'fixture'
+								);
+							}
+							assert.equal(await queue.getJob(job.id), undefined);
+							assert.equal(await storage.exists(inputPath), false);
+							await initialImport(job);
+							assert.equal(await sourceRow(source.id), undefined);
+						}
+					);
+				}
+				for (const failure of ['cleanup', 'mark', 'terminal-failure', 'mailbox-error']) {
+					await t.test(
+						`real keyed finalizer can reuse its ID after ${failure}`,
+						async () => {
+							const ctx = await setup(
+								['a@example.test'],
+								'eml_import',
+								await zipBytes()
+							);
+							makeConnector = (source) => {
+								const connector = new EMLConnector(source.credentials);
+								if (failure === 'mailbox-error')
+									connector.fetchEmails = async function* () {
+										throw new Error('Synthetic mailbox read failure');
+									};
+								return connector;
+							};
+							const originalDelete = StorageService.prototype.deleteObject;
+							let queueWorker;
+							let failWorker = ['terminal-failure', 'mailbox-error'].includes(
+								failure
+							);
+							if (failure === 'cleanup')
+								StorageService.prototype.deleteObject = async function (key) {
+									if (key === ctx.inputPath)
+										throw new Error('Synthetic queue cleanup failure');
+									return originalDelete.call(this, key);
+								};
+							if (failure === 'mark') {
+								await client`CREATE FUNCTION reject_queue_mark() RETURNS trigger LANGUAGE plpgsql AS $$
+							BEGIN IF NEW.upload_receipt->>'disposition' = 'handled' THEN
+								RAISE EXCEPTION 'Synthetic queue receipt mark failure'; END IF; RETURN NEW; END $$`;
+								await client`CREATE TRIGGER reject_queue_mark BEFORE UPDATE ON sync_sessions
+							FOR EACH ROW EXECUTE FUNCTION reject_queue_mark()`;
+							}
+							try {
+								queueWorker = new Worker(
+									queueName,
+									async (job) => {
+										if (failWorker)
+											throw new Error('Synthetic terminal finalizer failure');
+										await finish(job);
+									},
+									{ connection }
+								);
+								await queueWorker.waitUntilReady();
+								const terminal = once(
+									queueWorker,
+									failWorker ? 'failed' : 'completed',
+									{
+										signal: AbortSignal.timeout(15_000),
+									}
+								);
+								await worker(ctx, 'a@example.test');
+								await terminal;
+								const jobId = `upload-finished-${ctx.sessionId}`;
+								assert.ok(await sessionRow(ctx.sessionId));
+								assert.equal(
+									Boolean(await queue.getJob(jobId)),
+									false,
+									'Terminal job must not suppress same-ID retry'
+								);
+								StorageService.prototype.deleteObject = originalDelete;
+								if (failure === 'mark') {
+									await client`DROP TRIGGER reject_queue_mark ON sync_sessions`;
+									await client`DROP FUNCTION reject_queue_mark()`;
+								}
+								failWorker = false;
+								await db
+									.update(schema.syncSessions)
+									.set({ lastActivityAt: new Date(0) })
+									.where(eq(schema.syncSessions.id, ctx.sessionId));
+								const retried = once(queueWorker, 'completed', {
+									signal: AbortSignal.timeout(15_000),
+								});
+								await SyncSessionService.cleanStaleSessions(1000);
+								await retried;
+								assert.equal(await sessionRow(ctx.sessionId), undefined);
+								assert.equal(Boolean(await queue.getJob(jobId)), false);
+								assert.equal(
+									await storage.exists(ctx.inputPath),
+									failure === 'mailbox-error'
+								);
+							} finally {
+								StorageService.prototype.deleteObject = originalDelete;
+								if (queueWorker) await queueWorker.close();
+								if (failure === 'mark') {
+									await client`DROP TRIGGER IF EXISTS reject_queue_mark ON sync_sessions`;
+									await client`DROP FUNCTION IF EXISTS reject_queue_mark()`;
+								}
+								await queue.obliterate({ force: true });
+								await db
+									.delete(schema.ingestionSources)
+									.where(eq(schema.ingestionSources.id, ctx.source.id));
+							}
+						}
+					);
+				}
+			} finally {
+				Object.assign(ingestionQueue, originalQueue);
+				delete ingestionQueue.getJob;
+				await queue.obliterate({ force: true });
+				await queue.close();
+			}
 		}
 
 		await t.test(
@@ -1041,6 +1267,232 @@ test(
 					getState: async () => 'waiting',
 				});
 				assert.equal(Object.hasOwn(publicJob.data, 'uploadInputPath'), false);
+			}
+		);
+
+		await t.test(
+			'partial upload dispatch retries replace only matching aborted receipts and reject late results',
+			async (t) => {
+				for (const mode of ['initial', 'continuous']) {
+					await t.test(mode, async () => {
+						const inputPath = `open-archiver/tmp/${randomUUID()}.zip`;
+						const bytes = await zipBytes();
+						await storage.put(inputPath, bytes);
+						const source = await sourceFor(inputPath);
+						await db
+							.update(schema.ingestionSources)
+							.set({
+								status: mode === 'initial' ? 'auth_success' : 'active',
+							})
+							.where(eq(schema.ingestionSources.id, source.id));
+						const master = mode === 'initial' ? initialImport : continuousSync;
+						let admitted;
+						let entered;
+						let resume;
+						let blockNext = true;
+						const reading = new Promise((resolve) => {
+							entered = resolve;
+						});
+						const paused = new Promise((resolve) => {
+							resume = resolve;
+						});
+						makeConnector = (current) => {
+							const connector = new EMLConnector(current.credentials);
+							connector.listAllUsers = async function* () {
+								yield { primaryEmail: 'a@example.test' };
+								yield { primaryEmail: 'b@example.test' };
+								yield { primaryEmail: 'c@example.test' };
+							};
+							const fetch = connector.fetchEmails.bind(connector);
+							connector.fetchEmails = async function* (...args) {
+								if (blockNext) {
+									blockNext = false;
+									entered();
+									await paused;
+								}
+								yield* fetch(...args);
+							};
+							return connector;
+						};
+						const addBulk = ingestionQueue.addBulk;
+						let oldJob;
+						ingestionQueue.addBulk = async (jobs) => {
+							assert.equal(jobs.length, 3);
+							oldJob = jobs[0];
+							queued.push(oldJob);
+							admitted = processMailboxProcessor(oldJob);
+							await reading;
+							throw new Error('Synthetic partial-page dispatch failure');
+						};
+						try {
+							await assert.rejects(
+								master({ data: { ingestionSourceId: source.id } }),
+								/partial-page dispatch/
+							);
+							const oldId = oldJob.data.sessionId;
+							const abortedReceipt = (await sessionRow(oldId)).uploadReceipt;
+							assert.deepEqual(await buffer(await storage.get(inputPath)), bytes);
+							await processMailboxProcessor({
+								data: { ...oldJob.data, userEmail: 'b@example.test' },
+							});
+							const lateResults = (await sessionRow(oldId)).uploadReceipt.results;
+							assert.equal(
+								(await SyncSessionService.completionState(oldId)).complete,
+								false
+							);
+							ingestionQueue.addBulk = addBulk;
+							const before = queued.length;
+							await master({ data: { ingestionSourceId: source.id } });
+							const retry = queued
+								.slice(before)
+								.filter((job) => job.name === 'process-mailbox');
+							assert.equal(retry.length, 3);
+							const newId = retry[0].data.sessionId;
+							assert.notEqual(newId, oldId);
+							assert.deepEqual((await sessionRow(newId)).uploadReceipt.results, []);
+							resume();
+							await admitted;
+							assert.deepEqual((await sessionRow(newId)).uploadReceipt.results, []);
+							assert.equal(
+								await IngestionService.releaseCompletedUpload(newId),
+								false
+							);
+							await processMailboxProcessor(retry[0]);
+							assert.equal(
+								await IngestionService.releaseCompletedUpload(newId),
+								false
+							);
+							assert.deepEqual(await buffer(await storage.get(inputPath)), bytes);
+							await processMailboxProcessor(retry[1]);
+							assert.equal(
+								await IngestionService.releaseCompletedUpload(newId),
+								false
+							);
+							await processMailboxProcessor(retry[2]);
+							await finishSession({ source, sessionId: newId, inputPath });
+							assert.equal(await storage.exists(inputPath), false);
+							assert.equal(await sessionRow(newId), undefined);
+							assert.equal(await sessionRow(oldId), undefined);
+							assert.equal(abortedReceipt.dispatchAborted, true);
+							assert.deepEqual(lateResults, []);
+							assert.equal((await sourceRow(source.id)).status, 'imported');
+						} finally {
+							resume();
+							if (admitted) await admitted;
+							ingestionQueue.addBulk = addBulk;
+						}
+					});
+				}
+			}
+		);
+
+		await t.test(
+			'dispatch errors cannot abort independently proven canonical upload success',
+			async () => {
+				const inputPath = `open-archiver/tmp/${randomUUID()}.zip`;
+				await storage.put(inputPath, await zipBytes());
+				const source = await sourceFor(inputPath);
+				await db
+					.update(schema.ingestionSources)
+					.set({ status: 'auth_success' })
+					.where(eq(schema.ingestionSources.id, source.id));
+				makeConnector = (current) => {
+					const connector = new EMLConnector(current.credentials);
+					connector.listAllUsers = async function* () {
+						yield { primaryEmail: 'a@example.test' };
+					};
+					return connector;
+				};
+				const addBulk = ingestionQueue.addBulk;
+				let sessionId;
+				ingestionQueue.addBulk = async (jobs) => {
+					sessionId = jobs[0].data.sessionId;
+					for (const job of jobs) await processMailboxProcessor(job);
+					throw new Error(
+						'Synthetic lost enqueue acknowledgment after canonical success'
+					);
+				};
+				try {
+					await initialImport({ data: { ingestionSourceId: source.id } });
+				} finally {
+					ingestionQueue.addBulk = addBulk;
+				}
+				assert.equal(
+					(await sessionRow(sessionId)).uploadReceipt.dispatchAborted,
+					undefined
+				);
+				assert.equal((await SyncSessionService.completionState(sessionId)).complete, true);
+				await finishSession({ source, sessionId });
+				assert.equal(await storage.exists(inputPath), false);
+			}
+		);
+
+		await t.test(
+			'aborted dispatch provenance survives changed input or a mismatched retry mailbox set',
+			async () => {
+				for (const change of ['input', 'mailboxes']) {
+					const inputPath = `open-archiver/tmp/${randomUUID()}.zip`;
+					await storage.put(inputPath, await zipBytes());
+					const source = await sourceFor(inputPath);
+					await db
+						.update(schema.ingestionSources)
+						.set({ status: 'auth_success' })
+						.where(eq(schema.ingestionSources.id, source.id));
+					let mailboxes = ['a@example.test', 'b@example.test'];
+					makeConnector = (current) => {
+						const connector = new EMLConnector(current.credentials);
+						connector.listAllUsers = async function* () {
+							for (const primaryEmail of mailboxes) yield { primaryEmail };
+						};
+						return connector;
+					};
+					const addBulk = ingestionQueue.addBulk;
+					let oldJob;
+					ingestionQueue.addBulk = async (jobs) => {
+						oldJob = jobs[0];
+						queued.push(oldJob);
+						throw new Error('Synthetic partial enqueue');
+					};
+					try {
+						await assert.rejects(
+							initialImport({ data: { ingestionSourceId: source.id } }),
+							/partial enqueue/
+						);
+					} finally {
+						ingestionQueue.addBulk = addBulk;
+					}
+					const oldId = oldJob.data.sessionId;
+					assert.equal((await sessionRow(oldId)).uploadReceipt.dispatchAborted, true);
+					if (change === 'mailboxes') {
+						mailboxes = ['a@example.test'];
+						await assert.rejects(
+							initialImport({ data: { ingestionSourceId: source.id } }),
+							/different declared mailbox set/
+						);
+					} else {
+						const replacement = `open-archiver/tmp/${randomUUID()}.zip`;
+						await storage.put(replacement, await zipBytes());
+						await IngestionService.update(source.id, {
+							providerConfig: { type: 'eml_import', uploadedFilePath: replacement },
+						});
+						const before = queued.length;
+						await initialImport({ data: { ingestionSourceId: source.id } });
+						const retry = queued
+							.slice(before)
+							.filter((job) => job.name === 'process-mailbox');
+						assert.equal(retry.length, 2);
+						await processMailboxProcessor(oldJob);
+						assert.equal((await sourceRow(source.id)).status, 'importing');
+						for (const job of retry) await processMailboxProcessor(job);
+						await finishSession({ source, sessionId: retry[0].data.sessionId });
+						assert.equal(await storage.exists(replacement), false);
+						assert.equal((await sourceRow(source.id)).status, 'imported');
+					}
+					assert.ok(await sessionRow(oldId));
+					assert.ok(await storage.exists(inputPath));
+					await IngestionService.delete(source.id, { id: randomUUID() }, 'fixture');
+					assert.equal(await storage.exists(inputPath), false);
+				}
 			}
 		);
 

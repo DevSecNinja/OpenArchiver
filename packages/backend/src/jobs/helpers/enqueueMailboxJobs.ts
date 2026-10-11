@@ -1,4 +1,6 @@
 import { ingestionQueue } from '../queues';
+import { SyncSessionService } from '../../services/SyncSessionService';
+import { logger } from '../../config/logger';
 
 /**
  * One page per Redis round trip. Bounded because a single command carrying every mailbox of a
@@ -23,17 +25,42 @@ export const enqueueMailboxJobs = async (
 	sessionId: string,
 	uploadInputPath?: string
 ): Promise<void> => {
-	for (let i = 0; i < userEmails.length; i += ENQUEUE_PAGE_SIZE) {
-		await ingestionQueue.addBulk(
-			userEmails.slice(i, i + ENQUEUE_PAGE_SIZE).map((userEmail) => ({
-				name: 'process-mailbox',
-				data: {
-					ingestionSourceId,
-					userEmail,
+	try {
+		for (let i = 0; i < userEmails.length; i += ENQUEUE_PAGE_SIZE) {
+			await ingestionQueue.addBulk(
+				userEmails.slice(i, i + ENQUEUE_PAGE_SIZE).map((userEmail) => ({
+					name: 'process-mailbox',
+					data: {
+						ingestionSourceId,
+						userEmail,
+						sessionId,
+						...(uploadInputPath ? { uploadInputPath } : {}),
+					},
+				}))
+			);
+		}
+	} catch (error) {
+		if (uploadInputPath) {
+			try {
+				const aborted = await SyncSessionService.abortUploadDispatch(
 					sessionId,
-					...(uploadInputPath ? { uploadInputPath } : {}),
-				},
-			}))
-		);
+					ingestionSourceId,
+					uploadInputPath
+				);
+				if (!aborted) {
+					logger.warn(
+						{ error, ingestionSourceId, sessionId },
+						'Dispatch failed after independently proven canonical upload success'
+					);
+					return;
+				}
+			} catch (abortError) {
+				throw new AggregateError(
+					[error, abortError],
+					'Mailbox dispatch and upload receipt abort failed'
+				);
+			}
+		}
+		throw error;
 	}
 };

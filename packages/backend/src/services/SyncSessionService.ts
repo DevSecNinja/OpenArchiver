@@ -5,7 +5,11 @@ import type { SyncState, ProcessMailboxError, ProcessMailboxSkip } from '@open-a
 import { logger } from '../config/logger';
 import { ingestionQueue } from '../jobs/queues';
 import { isJobLive } from '../jobs/helpers/claimJobId';
-import { continuousSyncJobId, initialImportJobId } from '../jobs/helpers/jobIds';
+import {
+	continuousSyncJobId,
+	initialImportJobId,
+	uploadFinalizerOptions,
+} from '../jobs/helpers/jobIds';
 import { normalizeEmailAddress } from '../helpers/emailAddress';
 import {
 	readUploadReceipt,
@@ -91,6 +95,7 @@ export class SyncSessionService {
 			const expectedMailboxes = [
 				...new Set(upload.expectedMailboxes.map(normalizeEmailAddress)),
 			].sort();
+			const expectedMailboxSet = new Set(expectedMailboxes);
 			const receipt = readUploadReceipt({
 				version: 1,
 				sourceId: ingestionSourceId,
@@ -120,6 +125,32 @@ export class SyncSessionService {
 						if (!(await new StorageService().exists(upload.inputPath))) {
 							throw new Error('Uploaded input is missing before mailbox dispatch');
 						}
+						const previous = await tx
+							.select()
+							.from(syncSessions)
+							.where(eq(syncSessions.ingestionSourceId, ingestionSourceId))
+							.for('update');
+						const replaced: string[] = [];
+						for (const row of previous) {
+							const old = readUploadReceipt(row.uploadReceipt);
+							if (
+								!old?.dispatchAborted ||
+								old.sourceId !== ingestionSourceId ||
+								old.inputPath !== upload.inputPath ||
+								old.expectedMailboxes.length !== row.totalMailboxes
+							)
+								continue;
+							if (
+								old.expectedMailboxes.length !== expectedMailboxes.length ||
+								old.expectedMailboxes.some(
+									(mailbox) => !expectedMailboxSet.has(mailbox)
+								)
+							)
+								throw new Error(
+									'Aborted upload dispatch has a different declared mailbox set'
+								);
+							replaced.push(row.id);
+						}
 						const [session] = await tx
 							.insert(syncSessions)
 							.values({
@@ -129,6 +160,10 @@ export class SyncSessionService {
 								uploadReceipt: receipt,
 							})
 							.returning({ id: syncSessions.id });
+						if (replaced.length > 0) {
+							// The new receipt owns the same complete input claim before old jobs lose their identities.
+							await tx.delete(syncSessions).where(inArray(syncSessions.id, replaced));
+						}
 						return session.id;
 					},
 				};
@@ -152,6 +187,49 @@ export class SyncSessionService {
 		);
 
 		return session.id;
+	}
+
+	public static async abortUploadDispatch(
+		sessionId: string,
+		ingestionSourceId: string,
+		inputPath: string
+	): Promise<boolean> {
+		return withStorageLocks([storagePathLockKey(inputPath)], async (tx) => {
+			await tx
+				.select({ id: ingestionSources.id })
+				.from(ingestionSources)
+				.where(eq(ingestionSources.id, ingestionSourceId))
+				.for('update');
+			const [session] = await tx
+				.select()
+				.from(syncSessions)
+				.where(eq(syncSessions.id, sessionId))
+				.for('update');
+			if (!session) return { keys: [], run: async () => true };
+			const receipt = readUploadReceipt(session.uploadReceipt);
+			if (
+				!receipt ||
+				receipt.sourceId !== ingestionSourceId ||
+				session.ingestionSourceId !== ingestionSourceId ||
+				receipt.inputPath !== inputPath ||
+				receipt.expectedMailboxes.length !== session.totalMailboxes
+			)
+				throw new Error('Cannot abort an unknown upload dispatch receipt');
+			return {
+				keys: [],
+				run: async () => {
+					if (uploadReceiptSuccessful(receipt)) return false;
+					await tx
+						.update(syncSessions)
+						.set({
+							uploadReceipt: { ...receipt, dispatchAborted: true },
+							lastActivityAt: new Date(),
+						})
+						.where(eq(syncSessions.id, sessionId));
+					return true;
+				},
+			};
+		});
 	}
 
 	/**
@@ -277,6 +355,7 @@ export class SyncSessionService {
 			if (
 				!session ||
 				!receipt ||
+				receipt.dispatchAborted ||
 				!identity ||
 				receipt.sourceId !== session.ingestionSourceId ||
 				receipt.expectedMailboxes.length !== session.totalMailboxes ||
@@ -343,6 +422,7 @@ export class SyncSessionService {
 		const receipt = readUploadReceipt(session.uploadReceipt);
 		if (
 			!receipt ||
+			receipt.dispatchAborted ||
 			receipt.sourceId !== session.ingestionSourceId ||
 			receipt.expectedMailboxes.length !== session.totalMailboxes ||
 			identity.sourceId !== receipt.sourceId ||
@@ -556,16 +636,14 @@ export class SyncSessionService {
 						sessionId: session.id,
 						isInitialImport: session.isInitialImport,
 					},
-					// Keyed on the session so repeated sweeps cannot pile up finalizers for it. The
-					// session row is deleted whichever way the finalizer ends, so this cannot become
-					// a sweep that re-dispatches the same lost job forever.
-					{
-						jobId: completion.upload
-							? `upload-finished-${session.id}`
-							: `sync-cycle-finished:${session.id}`,
-						removeOnComplete: true,
-						removeOnFail: true,
-					}
+					// Remove terminal jobs so retained upload receipts can retry this same finalizer ID.
+					completion.upload
+						? uploadFinalizerOptions(session.id)
+						: {
+								jobId: `sync-cycle-finished:${session.id}`,
+								removeOnComplete: true,
+								removeOnFail: true,
+							}
 				);
 				logger.warn(
 					{ sessionId: session.id, ingestionSourceId: session.ingestionSourceId },

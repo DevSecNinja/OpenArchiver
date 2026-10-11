@@ -15,6 +15,7 @@ import { SyncSessionService } from '../../services/SyncSessionService';
 import { isMailboxUnavailableError } from '../../services/ingestion-connectors/MicrosoftConnector';
 import { unlink } from 'fs/promises';
 import { uploadedInputPath, type UploadMailboxIdentity } from '../../helpers/uploadCompletion';
+import { uploadFinalizerOptions } from '../helpers/jobIds';
 
 /**
  * Handles ingestion of emails for a single user's mailbox.
@@ -97,7 +98,7 @@ export const processMailboxProcessor = async (job: Job<IProcessMailboxJob>) => {
 						sessionId,
 						isInitialImport: false,
 					},
-					uploadIdentity ? { jobId: `upload-finished-${sessionId}` } : undefined
+					uploadIdentity ? uploadFinalizerOptions(sessionId) : undefined
 				);
 			}
 		} catch (sessionError) {
@@ -379,7 +380,7 @@ export const processMailboxProcessor = async (job: Job<IProcessMailboxJob>) => {
 					sessionId,
 					isInitialImport: false,
 				},
-				uploadIdentity ? { jobId: `upload-finished-${sessionId}` } : undefined
+				uploadIdentity ? uploadFinalizerOptions(sessionId) : undefined
 			);
 		}
 	} catch (error) {

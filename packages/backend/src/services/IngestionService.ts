@@ -598,6 +598,7 @@ export class IngestionService {
 					if (
 						!session ||
 						!receipt ||
+						receipt.dispatchAborted ||
 						receipt.sourceId !== id ||
 						receipt.inputPath !== expectedUploadInput ||
 						receipt.disposition === 'handled' ||
@@ -825,21 +826,6 @@ export class IngestionService {
 			: or(eq(ingestionSources.id, id), eq(ingestionSources.mergedIntoId, id));
 		const planned = await db.select().from(ingestionSources).where(scope);
 		const ids = planned.map((row) => row.id);
-		// Cancel queued work before taking locks. Active workers are not awaited under the gate:
-		// current writes finish first, and late writers recheck source existence after acquiring locks.
-		const jobs = await ingestionQueue.getJobs(['waiting', 'delayed', 'paused', 'prioritized']);
-		for (const job of jobs) {
-			if (!ids.includes(job.data.ingestionSourceId)) continue;
-			try {
-				await job.remove();
-			} catch (error) {
-				logger.error(
-					{ error, jobId: job.id },
-					'Failed to cancel queued work before source deletion'
-				);
-				throw error;
-			}
-		}
 		const { deletedRows, pendingUploads } = await withStoragePurgeLock(async (tx) => {
 			const fresh = await tx.select().from(ingestionSources).where(scope).for('update');
 			if (
@@ -919,6 +905,24 @@ export class IngestionService {
 		});
 		const deletedSource = deletedRows.find((row) => row.id === id);
 		if (!deletedSource) throw new Error('Ingestion source not found');
+		// Refused or rolled-back purges leave queued work intact. Late workers reject the deleted source.
+		try {
+			const jobs = await ingestionQueue.getJobs([
+				'waiting',
+				'delayed',
+				'paused',
+				'prioritized',
+			]);
+			for (const job of jobs) {
+				if (ids.includes(job.data.ingestionSourceId)) await job.remove();
+			}
+		} catch (error) {
+			logger.error(
+				{ error, sourceIds: ids },
+				'Source metadata deleted but queued-job cleanup failed'
+			);
+			throw error;
+		}
 		for (const deleted of deletedRows) {
 			await this.auditService.createAuditLog({
 				actorIdentifier: actor.id,

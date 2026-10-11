@@ -197,8 +197,10 @@ and rejects a removed input; deleting the last pending source permits exact disp
 DB/search/storage are not one atomic system: a crash, failed audit or cleanup error after metadata commit
 can leave unlinked bytes. These are not blindly deleted, and no general repair/GC service is introduced.
 
-**Whole-source deletion is a conservative coarse-gate operation:** it cancels queued jobs before
-acquiring all 64 stripes and never waits for workers while holding their locks. Active transactions
+**Whole-source deletion is a conservative coarse-gate operation:** it cancels queued jobs only after
+metadata deletion commits, outside all 64 stripes, and never waits for workers while holding locks.
+Refusal, search failure or database rollback preserves queued work, including an unclaimed initial
+import. Post-commit cancellation failures are explicit; stale jobs cannot write a deleted source. Active transactions
 finish first; queued/cached-source writers must freshly verify their source/root inside the gate before
 publishing. Group membership is rechecked before DB removal, then prefix cleanup reacquires all stripes
 and retains prefixes still referenced by any email/attachment row. External attachment ownership that
@@ -215,6 +217,18 @@ encrypted snapshot; concurrent replacement and canonical input clearing cannot b
 Referenced objects are retained; undecipherable relevant credentials fail cleanup explicitly.
 
 ### Uploaded-input completion
+
+A partial mailbox-enqueue failure marks only that upload dispatch aborted in the existing receipt.
+Its original input and closed mailbox set remain protected; late delivery/results cannot complete it.
+A retry atomically publishes a fresh receipt for the same source, input and complete mailbox set before
+retiring matching aborted receipts. Repointed, unknown or mismatched claims are retained, not guessed.
+Only the replacement's complete canonical successes permit release. Keyed upload finalizers remove
+both successful and failed terminal job records so the stale-session sweep can retry the same ID after
+cleanup or receipt-marking failure.
+
+The optional `UPLOAD_QUEUE_TEST_HOST` / `UPLOAD_QUEUE_TEST_PASSWORD` environment variables enable
+real BullMQ/Redis purge and same-ID finalizer regressions in `upload-completion.test.cjs`. The local
+fixture driver reuses its owned Redis instance; hosted CI does not require an additional service.
 
 Migration `0045_upload_completion_receipt` adds one nullable, internal `sync_sessions.upload_receipt`
 JSONB column. It stores only the source ID, original uploaded storage key, a closed normalized mailbox

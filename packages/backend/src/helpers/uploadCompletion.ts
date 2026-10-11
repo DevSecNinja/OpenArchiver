@@ -7,6 +7,7 @@ const receiptSchema = z
 		sourceId: z.string().uuid(),
 		inputPath: z.string().min(1),
 		discoveryClosed: z.literal(true),
+		dispatchAborted: z.literal(true).optional(),
 		disposition: z.literal('handled').optional(),
 		expectedMailboxes: z.array(z.string().min(1)).min(1),
 		results: z.array(
@@ -46,7 +47,7 @@ export function readUploadReceipt(value: unknown): UploadCompletionReceipt | nul
 }
 
 export function uploadReceiptComplete(receipt: UploadCompletionReceipt): boolean {
-	return receipt.results.length === receipt.expectedMailboxes.length;
+	return !receipt.dispatchAborted && receipt.results.length === receipt.expectedMailboxes.length;
 }
 
 export function uploadReceiptSuccessful(receipt: UploadCompletionReceipt): boolean {

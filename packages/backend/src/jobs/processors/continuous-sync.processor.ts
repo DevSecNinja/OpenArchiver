@@ -31,6 +31,7 @@ export default async (job: Job<IContinuousSyncJob>) => {
 	// no session, and no log, and the scheduler never admits it again. That is not hypothetical:
 	// connector construction throws synchronously on damaged credentials (MSAL validates its
 	// config), and exactly that left a source dead on a production instance.
+	const inputPath = uploadedInputPath(source.credentials);
 	try {
 		const connector = EmailProviderFactory.createConnector(source);
 
@@ -82,7 +83,6 @@ export default async (job: Job<IContinuousSyncJob>) => {
 		}
 
 		// Phase 2: Create a session BEFORE dispatching any jobs.
-		const inputPath = uploadedInputPath(source.credentials);
 		const declaredMailboxes = inputPath ? [...new Set(userEmails)] : userEmails;
 		const sessionId = await SyncSessionService.create(
 			ingestionSourceId,
@@ -106,12 +106,20 @@ export default async (job: Job<IContinuousSyncJob>) => {
 		);
 	} catch (error) {
 		logger.error({ err: error, ingestionSourceId }, 'Continuous sync job failed.');
-		await IngestionService.update(ingestionSourceId, {
-			status: 'error',
-			lastSyncFinishedAt: new Date(),
-			lastSyncStatusMessage:
-				error instanceof Error ? error.message : 'An unknown error occurred during sync.',
-		});
+		await IngestionService.update(
+			ingestionSourceId,
+			{
+				status: 'error',
+				lastSyncFinishedAt: new Date(),
+				lastSyncStatusMessage:
+					error instanceof Error
+						? error.message
+						: 'An unknown error occurred during sync.',
+			},
+			undefined,
+			undefined,
+			inputPath
+		);
 		throw error;
 	}
 };

@@ -981,7 +981,7 @@ test(
 		await t.test(
 			'source purge cancellation and cleanup failures do not erase live references',
 			async () => {
-				const source = await createSource();
+				let source = await createSource();
 				await ingest(source, message('purge-failure'));
 				const [row] = await emails(source);
 				queuedJobs = [
@@ -997,11 +997,18 @@ test(
 						IngestionService.delete(source.id, actor, 'fixture'),
 						/cancellation failure/
 					);
-					assert.equal((await emails(source)).length, 1);
+					assert.equal((await emails(source)).length, 0);
 					assert.ok(await storage.exists(row.storagePath));
+					assert.equal(
+						(await ingest(source, message('late-after-cancel-failure'))).error,
+						true
+					);
 				} finally {
 					queuedJobs = [];
 				}
+				source = await createSource();
+				await ingest(source, message('purge-storage-failure'));
+				const [retained] = await emails(source);
 				const originalDelete = StorageService.prototype.delete;
 				StorageService.prototype.delete = async () => {
 					throw new Error('Synthetic prefix cleanup failure');
@@ -1012,7 +1019,7 @@ test(
 						/prefix cleanup failure/
 					);
 					assert.equal((await emails(source)).length, 0);
-					assert.ok(await storage.exists(row.storagePath));
+					assert.ok(await storage.exists(retained.storagePath));
 					assert.equal((await ingest(source, message('late-after-failure'))).error, true);
 				} finally {
 					StorageService.prototype.delete = originalDelete;
@@ -1052,11 +1059,7 @@ test(
 						const [locks] = await admin`SELECT count(*)::int AS held FROM pg_locks l
 						JOIN pg_stat_activity a ON a.pid = l.pid WHERE a.datname = ${databaseName}
 						AND l.locktype = 'advisory' AND l.classid = ${STORAGE_LOCK_NAMESPACE} AND l.granted`;
-						assert.equal(
-							locks.held,
-							0,
-							'Cancel queued imports before acquiring purge locks'
-						);
+						assert.equal(locks.held, 0, 'Cancel queued imports outside purge locks');
 						canceled.push(row.id);
 					},
 				}));
