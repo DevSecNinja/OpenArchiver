@@ -922,6 +922,16 @@ export class IngestionService {
 		});
 		const deletedSource = deletedRows.find((row) => row.id === id);
 		if (!deletedSource) throw new Error('Ingestion source not found');
+		for (const deleted of deletedRows) {
+			await this.auditService.createAuditLog({
+				actorIdentifier: actor.id,
+				actionType: 'DELETE',
+				targetType: 'IngestionSource',
+				targetId: deleted.id,
+				actorIp,
+				details: { sourceName: deleted.name },
+			});
+		}
 		// Refused or rolled-back purges leave queued work intact. Late workers reject the deleted source.
 		try {
 			const jobs = await ingestionQueue.getJobs([
@@ -939,16 +949,6 @@ export class IngestionService {
 				'Source metadata deleted but queued-job cleanup failed'
 			);
 			throw error;
-		}
-		for (const deleted of deletedRows) {
-			await this.auditService.createAuditLog({
-				actorIdentifier: actor.id,
-				actionType: 'DELETE',
-				targetType: 'IngestionSource',
-				targetId: deleted.id,
-				actorIp,
-				details: { sourceName: deleted.name },
-			});
 		}
 		const storage = new StorageService();
 		try {

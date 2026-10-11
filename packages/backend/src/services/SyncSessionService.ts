@@ -11,6 +11,7 @@ import {
 	uploadFinalizerOptions,
 } from '../jobs/helpers/jobIds';
 import { normalizeEmailAddress } from '../helpers/emailAddress';
+import { truncateToBytes } from '../helpers/truncateToBytes';
 import {
 	readUploadReceipt,
 	uploadReceiptComplete,
@@ -390,7 +391,16 @@ export class SyncSessionService {
 			const failed = receipt.results.length - completed;
 			const notes = [...session.errorMessages];
 			if (changesResult && outcome !== 'success' && notes.length < 5) {
-				notes.push(`${mailbox}: upload mailbox did not complete successfully`);
+				const diagnostic =
+					'message' in result && typeof result.message === 'string'
+						? result.message.replace(/[\r\n\0]+/g, ' ').trim()
+						: '';
+				notes.push(
+					truncateToBytes(
+						`${mailbox}: ${diagnostic || 'upload mailbox did not complete successfully'}`,
+						1024
+					)
+				);
 			}
 			await tx
 				.update(syncSessions)

@@ -202,7 +202,9 @@ can leave unlinked bytes. These are not blindly deleted, and no general repair/G
 **Whole-source deletion is a conservative coarse-gate operation:** it cancels queued jobs only after
 metadata deletion commits, outside all 64 stripes, and never waits for workers while holding locks.
 Refusal, search failure or database rollback preserves queued work, including an unclaimed initial
-import. Post-commit cancellation failures are explicit; stale jobs cannot write a deleted source. Active transactions
+import. Each deleted source's existing audit entry is recorded immediately after the metadata commit,
+before fallible queue cancellation. Post-commit cancellation failures are explicit; stale jobs cannot
+write a deleted source. Active transactions
 finish first; queued/cached-source writers must freshly verify their source/root inside the gate before
 publishing. Group membership is rechecked before DB removal, then prefix cleanup reacquires all stripes
 and retains prefixes still referenced by any email/attachment row. External attachment ownership that
@@ -219,6 +221,11 @@ encrypted snapshot; concurrent replacement and canonical input clearing cannot b
 Referenced objects are retained; undecipherable relevant credentials fail cleanup explicitly.
 
 ### Uploaded-input completion
+
+Upload failure/skip notes preserve concrete diagnostics, normalize CR/LF/NUL separators, and cap each
+complete mailbox-plus-message note at 1,024 UTF-8 bytes using `truncateToBytes`. At most five notes are
+retained, without changing canonical result idempotency; only missing or blank messages use generic
+fallback text. These upload-specific bounds do not change the legacy remote-provider result path.
 
 A partial mailbox-enqueue failure marks only that upload dispatch aborted in the existing receipt.
 Its original input and closed mailbox set remain protected; late delivery/results cannot complete it.
