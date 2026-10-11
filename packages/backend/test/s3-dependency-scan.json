@@ -9,13 +9,23 @@
 		"validation": "Hosted run 38082652745 passed for head a158ba4bc5443773ab3dc0a07d71c2c068c7024c: OSS build and 32 tests, none failed or skipped. Not rescanned locally; all scan results below belong to validatedBase.",
 		"hostedRun": "https://github.com/DevSecNinja/OpenArchiver/actions/runs/38082652745"
 	},
-	"currentMainIntegration": {
+	"prePaginationIntegration": {
 		"preparedAt": "2026-10-11",
 		"base": "4c0805de2f5f68cbbd8b2bd90e8fc28a0389aeef",
 		"lockfileSha256": "48b4daafb08e047015e8428cec54da656a279cfbe850b0956fefcbe75338b5a2",
 		"method": "Conflict-free Git merge preserving main's mail/parser, frontend, and HTTP dependencies; no manual lockfile edits",
 		"scopeProof": "All 37 SDK closure package/snapshot records are unchanged from a158ba4; only the original SDK closure differs from main; all other main importer/package/snapshot records and package-manager lock preserved",
-		"validation": "Node 22 syntax and structural dependency checks passed. Fresh hosted build/tests pending publication. No new local installation, build, fixture, or scan; historical results do not validate this full integrated graph."
+		"validation": "Hosted run 38142178893 passed for de485e0: 51 backend tests including S3/PostgreSQL and 16 production frontend tests, none failed or skipped; frontend types had 0 errors and 44 warnings. Actual GitHub Copilot Balanced review 5483469443 on that head reported 0 open findings. No new local fixture or scan.",
+		"hostedRun": "https://github.com/DevSecNinja/OpenArchiver/actions/runs/38142178893",
+		"copilotReview": "https://github.com/DevSecNinja/OpenArchiver/pull/121#pullrequestreview-5483469443"
+	},
+	"currentMainIntegration": {
+		"preparedAt": "2026-10-11",
+		"base": "b27216e9d6225a07459749dbaa2aedbd31fe154e",
+		"lockfileSha256": "48b4daafb08e047015e8428cec54da656a279cfbe850b0956fefcbe75338b5a2",
+		"method": "Conflict-free Git merge of main after PR 122; preserve landed prefix pagination/error handling, DeleteObjectCommand import, deletion tests and shared fixture",
+		"scopeProof": "Main lockfile unchanged from 4c0805de; merged lockfile and SDK manifest unchanged from de485e0, preserving the previously verified 37-package SDK closure and all unrelated main records",
+		"validation": "Fresh hosted CI and actual matching-head GitHub Copilot review pending signed publication. Earlier CI/review and fixture/scan results remain historical; no new local installation, build, container, or scan."
 	},
 	"nodeImage": "node:22.23.3-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402",
 	"fixtureImageId": "sha256:825919941e3fdeb8d6e7705959466b7626481f95b32fea019dbac847ab79b0e8",

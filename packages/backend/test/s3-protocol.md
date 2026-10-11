@@ -97,10 +97,23 @@ and tests were retained. Structural checks confirm that only the original SDK
 dependency closure differs from main, and all 37 updated SDK package/snapshot
 records remain identical to `a158ba4`. The provider and protocol tests are unchanged.
 No manual lockfile edits, package-manager reconciliation, or age exceptions were
-needed. Node 22 syntax checks passed; **fresh hosted validation of this new merge
-is pending publication**. No new installation, build, fixture, or scan was run.
-The results and residual counts below remain explicitly old-base fixture evidence,
-not results for the latest integrated graph.
+needed. Hosted [run 38142178893](https://github.com/DevSecNinja/OpenArchiver/actions/runs/38142178893)
+passed for `de485e0`: 51 backend tests including S3/PostgreSQL and 16 production
+frontend tests, with no failures or skips. Frontend types had zero errors and
+44 warnings. The actual GitHub Copilot
+[Balanced review](https://github.com/DevSecNinja/OpenArchiver/pull/121#pullrequestreview-5483469443)
+reported zero open findings on that head; it excluded the generated lockfile.
+
+After [PR #122](https://github.com/DevSecNinja/OpenArchiver/pull/122) landed, the
+branch was refreshed with actual `main` at `b27216e9`. The conflict-free merge
+preserves the landed prefix pagination/error handling, `DeleteObjectCommand`
+import, deletion tests, and shared `s3-fixture.mjs`. The SDK pair remains 3.1147.0.
+Main's lockfile is unchanged from `4c0805de`, and the merged lockfile and SDK
+manifest are unchanged from `de485e0`, preserving the prior structural graph proof.
+**Fresh hosted CI and an actual matching-head Copilot review are pending signed
+publication of this merge.** Earlier CI/review results do not cover the newly
+combined deletion and SDK changes. No new installation, build, container, or scan
+was run locally. Results and residual counts below remain old-base fixture evidence.
 
 | Check                   | Result                                                                                                                                                             |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
