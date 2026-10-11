@@ -71,6 +71,12 @@ jobs:
                     --mount "type=bind,source=$GITHUB_WORKSPACE,target=/app,readonly" \
                     openarchiver-frontend-test
 
+            - name: Run isolated Dovecot interoperability fixture
+              timeout-minutes: 10
+              run: |
+                  bash packages/backend/test/integration/run-imap-interop.sh prepare
+                  bash packages/backend/test/integration/run-imap-interop.sh run
+
     renovate:
         name: Renovate configuration
         runs-on: ubuntu-latest

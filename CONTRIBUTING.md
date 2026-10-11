@@ -208,6 +208,58 @@ proxies and server interoperability remain unverified. Keep the full source/test
 resolved dependency advisory inventory separate from native SQLite, full-runtime and image
 scan evidence; this change does not approve deployment or claim a zero-vulnerability artifact.
 
+#### Opt-in Dovecot interoperability fixture
+
+`packages/backend/test/integration/run-imap-interop.sh` is an opt-in real-server
+fixture. Its source is prepared separately from the already validated composer regressions;
+runtime results must be recorded before treating it as interoperability evidence.
+The first local preparation stopped before dependency installation because effective kernel
+resource limits could not be verified. No local interoperability success is claimed.
+The OSS workflow therefore includes one bounded hosted-Linux step that reuses its existing
+compiled build and runs the fixture explicitly; this initial CI wiring is not itself a
+runtime-validation result.
+It requires a prebuilt Linux amd64 workspace, Docker or Podman with effective cgroup-v2
+limits, and existing Bash and `timeout` tools. Certificate generation uses the existing
+OpenSSL in the same pinned Dovecot image, not a host tool installation. It does not install
+dependencies or build images. Network preparation is explicit and separate from the isolated
+protocol run:
+
+```sh
+bash packages/backend/test/integration/run-imap-interop.sh prepare
+bash packages/backend/test/integration/run-imap-interop.sh run
+# Use CONTAINER_ENGINE=podman for either command when appropriate.
+```
+
+The runner pins official Dovecot 2.4.4 to manifest
+`sha256:723e3392fe16c6fad8ddc605ea767cc01b4bad9cd9f13eb1dbac15e79c89b2d4`
+and reuses the existing frontend fixture's pinned Node 22 image. On 2026-10-11, registry
+manifest/config hashes were verified without pulling layers; the Dovecot tag was last pushed
+on 2026-06-03 and the Node tag on 2026-10-06, both beyond the 72-hour gate. The choice follows
+[ImapFlow's Dovecot integration fixture](https://github.com/postalsys/imapflow/tree/v2.3.0/test/integration),
+but does **not** copy its certificate-verification bypass or plaintext-auth override.
+
+Each run generates an owned, short-lived CA and server certificate with localhost/IP SANs
+in a network-disabled, capped certificate helper that exits and is removed before the server
+and client start; the temporary CA private key is then deleted.
+Only the client test processes trust that CA, via `NODE_EXTRA_CA_CERTS`; production TLS
+configuration is untouched. The server requires TLS. The server and client each have a
+256 MiB memory/no-swap ceiling, one CPU and 128 PIDs; the runner verifies effective controls,
+uses read-only filesystems with small temporary writable paths, and fails rather than
+relaxing unavailable controls. They share a network-disabled namespace using loopback,
+with no host ports. Readiness, test execution and cleanup have explicit deadlines. CI caps
+the entire preparation/protocol step at ten minutes; certificate and test output are limited
+to their final 16 KiB and 64 KiB respectively, without discarding failure exit codes.
+
+The opt-in test drives the actual compiled ImapConnector and installed ImapFlow through
+implicit TLS and STARTTLS, authentication, LIST/select, both passes of UID-based fetching,
+MIME/attachment reads in both preservation modes, cursor resume, logout and early iterator
+return. It separately exercises explicit SEARCH on the connector-owned client, since the
+production UID-only criterion can optimize away SEARCH. Wrong-password and untrusted-CA
+cases must reject and close. Messages and credentials are synthetic; no OAuth, proxy, live
+provider account, real ingestion database or production archive is involved. Ordinary
+`pnpm test:oss` discovery skips this test unless the isolated runner opts in. Passing one
+Dovecot fixture is not multi-provider, full-ingestion, concurrency or deployment clearance.
+
 ### Archive path constraints
 
 ZIP entry names and connector folder paths must be relative, slash-separated paths without empty,
