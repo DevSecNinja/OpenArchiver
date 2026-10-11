@@ -1,9 +1,10 @@
 import { createHash } from 'crypto';
-import { asc, gt, inArray, sql } from 'drizzle-orm';
+import { and, asc, gt, inArray, sql } from 'drizzle-orm';
 import { db, type Database } from '../../database';
-import { archivedEmails, attachments, syncSessions } from '../../database/schema';
-import type { IStorageProvider } from '@open-archiver/types';
+import { archivedEmails, attachments, ingestionSources, syncSessions } from '../../database/schema';
+import type { IngestionCredentials, IStorageProvider } from '@open-archiver/types';
 import { readUploadReceipt, uploadReceiptSuccessful } from '../../helpers/uploadCompletion';
+import { CryptoService } from '../CryptoService';
 
 export const STORAGE_LOCK_NAMESPACE = 0x4f415243;
 export const STORAGE_LOCK_STRIPES = 64;
@@ -90,8 +91,7 @@ async function runStoragePlan<T>(
 /** Called only after row removal committed; a failed cleanup can leave bytes, never revived references. */
 export async function cleanupUnreferencedObjects(
 	storage: Pick<IStorageProvider, 'deleteObject'>,
-	candidates: readonly string[],
-	additionalReferences?: (tx: Database) => Promise<readonly string[]>
+	candidates: readonly string[]
 ): Promise<void> {
 	const paths = [...new Set(candidates)];
 	if (paths.length === 0) return;
@@ -121,10 +121,7 @@ export async function cleanupUnreferencedObjects(
 			);
 		const referenced = new Set([
 			...[...emails, ...files].map((row) => storagePathIdentity(row.path)),
-			...(await referencedReceiptInputs(tx, paths)).map(storagePathIdentity),
-			...(additionalReferences
-				? (await additionalReferences(tx)).map(storagePathIdentity)
-				: []),
+			...(await referencedUploads(tx, paths)).map(storagePathIdentity),
 		]);
 		return {
 			keys: [],
@@ -138,7 +135,69 @@ export async function cleanupUnreferencedObjects(
 	});
 }
 
-export async function referencedReceiptInputs(
+export function pendingUploadPath(credentials: unknown): string | undefined {
+	if (!credentials || typeof credentials !== 'object' || !('type' in credentials)) return;
+	if (
+		credentials.type !== 'pst_import' &&
+		credentials.type !== 'eml_import' &&
+		credentials.type !== 'mbox_import'
+	)
+		return;
+	if ('uploadedFilePath' in credentials && typeof credentials.uploadedFilePath === 'string') {
+		return credentials.uploadedFilePath || undefined;
+	}
+}
+
+export function pendingUploadFromRow(
+	row: Pick<typeof ingestionSources.$inferSelect, 'id' | 'credentials'>
+): string | undefined {
+	if (!row.credentials) return;
+	const credentials = CryptoService.decryptObject<IngestionCredentials>(row.credentials);
+	if (!credentials)
+		throw new Error(`Cannot verify pending upload references for source ${row.id}`);
+	return pendingUploadPath(credentials);
+}
+
+export async function referencedUploads(
+	tx: Database,
+	candidates: readonly string[],
+	prefix = false
+): Promise<string[]> {
+	if (candidates.length === 0) return [];
+	const found = new Set<string>(await referencedReceiptInputs(tx, candidates, prefix));
+	let cursor: string | undefined;
+	for (;;) {
+		const rows = await tx
+			.select({ id: ingestionSources.id, credentials: ingestionSources.credentials })
+			.from(ingestionSources)
+			.where(
+				and(
+					inArray(ingestionSources.provider, ['pst_import', 'eml_import', 'mbox_import']),
+					cursor ? gt(ingestionSources.id, cursor) : undefined
+				)
+			)
+			.orderBy(asc(ingestionSources.id))
+			.limit(100);
+		for (const row of rows) {
+			const path = pendingUploadFromRow(row);
+			if (!path) continue;
+			const identity = storagePathIdentity(path);
+			for (const candidate of candidates) {
+				if (
+					prefix
+						? identity.startsWith(storagePathIdentity(candidate))
+						: identity === storagePathIdentity(candidate)
+				) {
+					found.add(candidate);
+				}
+			}
+		}
+		if (rows.length < 100 || found.size === candidates.length) return [...found];
+		cursor = rows[rows.length - 1].id;
+	}
+}
+
+async function referencedReceiptInputs(
 	tx: Database,
 	candidates: readonly string[],
 	prefix = false

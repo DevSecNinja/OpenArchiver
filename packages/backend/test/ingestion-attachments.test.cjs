@@ -62,7 +62,7 @@ test(
 	'compiled ingestion publishes complete attachment links with real PostgreSQL',
 	{
 		skip: databaseUrl ? false : 'Set STORAGE_AUTH_TEST_DATABASE_URL to run PostgreSQL coverage',
-		timeout: 60_000,
+		timeout: 120_000,
 	},
 	async (t) => {
 		const url = new URL(databaseUrl);
@@ -1284,6 +1284,242 @@ test(
 						assert.deepEqual(await buffer(await storage.get(key)), bytes);
 					}
 					assert.equal(queued, 1);
+				} finally {
+					IngestionService.triggerInitialImport = originalTrigger;
+					createConnector = () => assert.fail('Unrelated provider must not run');
+				}
+			}
+		);
+
+		await t.test(
+			'per-email cleanup coordinates pending upload publication and final exact disposal',
+			async (t) => {
+				const originalTrigger = IngestionService.triggerInitialImport;
+				IngestionService.triggerInitialImport = async () => {};
+				createConnector = () => ({ testConnection: async () => true });
+				try {
+					for (const kind of ['email', 'attachment']) {
+						for (const operation of ['create', 'replace']) {
+							for (const first of ['publication', 'cleanup']) {
+								await t.test(`${kind}: ${operation}, ${first} first`, async (t) => {
+									const consumerName = `Pending email input ${randomUUID()}`;
+									const owner = await createSource();
+									let replacing;
+									t.after(async () => {
+										await db
+											.delete(schema.ingestionSources)
+											.where(eq(schema.ingestionSources.name, consumerName));
+										await db
+											.delete(schema.ingestionSources)
+											.where(eq(schema.ingestionSources.id, owner.id));
+										if (replacing) {
+											await db
+												.delete(schema.ingestionSources)
+												.where(
+													eq(schema.ingestionSources.id, replacing.id)
+												);
+										}
+									});
+									const archived = await ingest(owner, message(randomUUID()));
+									const [record] =
+										kind === 'email'
+											? await emails(owner)
+											: await attachments(owner);
+									const bytes = await buffer(
+										await storage.get(record.storagePath)
+									);
+									const key = `open-archiver/${owner.id}/pending-caf\u00e9-${kind}`;
+									const selected = key.normalize('NFD');
+									await storage.put(key, bytes);
+									await storage.put(
+										`${key}-suffix`,
+										Buffer.from('exact neighbor')
+									);
+									await db
+										.update(
+											kind === 'email'
+												? schema.archivedEmails
+												: schema.attachments
+										)
+										.set({ storagePath: key })
+										.where(
+											eq(
+												kind === 'email'
+													? schema.archivedEmails.id
+													: schema.attachments.id,
+												record.id
+											)
+										);
+									await storage.deleteObject(record.storagePath);
+									const previous = `open-archiver/tmp/previous-${randomUUID()}.zip`;
+									if (operation === 'replace') {
+										await storage.put(previous, Buffer.from('previous input'));
+										replacing = await createSource();
+										await IngestionService.update(replacing.id, {
+											providerConfig: {
+												type: 'eml_import',
+												uploadedFilePath: previous,
+											},
+										});
+									}
+									const publish = () => {
+										const dto = {
+											name: consumerName,
+											providerConfig: {
+												type: 'eml_import',
+												uploadedFilePath: selected,
+											},
+										};
+										return operation === 'create'
+											? IngestionService.create(
+													{ ...dto, provider: 'eml_import' },
+													actor.id,
+													actor,
+													'fixture'
+												)
+											: IngestionService.update(replacing.id, dto);
+									};
+									const removeEmail = () =>
+										ArchivedEmailService.deleteArchivedEmail(
+											archived.archivedEmailId,
+											actor,
+											'fixture'
+										);
+									let registration;
+									let deleting;
+									if (first === 'publication') {
+										const blocker = await client.reserve();
+										await blocker`SELECT pg_advisory_lock(1234569, 1)`;
+										await client`CREATE FUNCTION pause_email_input() RETURNS trigger LANGUAGE plpgsql AS $$
+										BEGIN IF NEW.name LIKE 'Pending email input %' THEN
+											PERFORM pg_advisory_xact_lock(1234569, 1); END IF; RETURN NEW; END $$`;
+										await client`CREATE TRIGGER pause_email_input BEFORE INSERT OR UPDATE ON ingestion_sources
+										FOR EACH ROW EXECUTE FUNCTION pause_email_input()`;
+										registration = publish();
+										try {
+											await waitForLockWaiters(1);
+											deleting = removeEmail();
+											await waitForLockWaiters(2);
+										} finally {
+											await blocker`SELECT pg_advisory_unlock(1234569, 1)`;
+											blocker.release();
+											await Promise.allSettled([
+												registration,
+												...(deleting ? [deleting] : []),
+											]);
+											await client`DROP TRIGGER pause_email_input ON ingestion_sources`;
+											await client`DROP FUNCTION pause_email_input()`;
+										}
+										const consumer = await registration;
+										await deleting;
+										assert.equal(
+											consumer.credentials.uploadedFilePath,
+											selected
+										);
+										assert.equal(
+											(
+												await db
+													.select()
+													.from(schema.syncSessions)
+													.where(
+														eq(
+															schema.syncSessions.ingestionSourceId,
+															consumer.id
+														)
+													)
+											).length,
+											0,
+											'Pending credentials must protect input without a receipt'
+										);
+										assert.deepEqual(
+											await buffer(await storage.get(key)),
+											bytes
+										);
+										await IngestionService.delete(
+											consumer.id,
+											actor,
+											'fixture'
+										);
+										assert.equal(await storage.exists(key), false);
+									} else {
+										let entered;
+										let release;
+										const active = new Promise((resolve) => {
+											entered = resolve;
+										});
+										const paused = new Promise((resolve) => {
+											release = resolve;
+										});
+										const originalDelete =
+											StorageService.prototype.deleteObject;
+										StorageService.prototype.deleteObject = async function (
+											path
+										) {
+											if (path === key) {
+												entered();
+												await paused;
+											}
+											return originalDelete.call(this, path);
+										};
+										deleting = removeEmail();
+										try {
+											await Promise.race([
+												active,
+												deleting.then(() =>
+													assert.fail('Expected exact cleanup to pause')
+												),
+											]);
+											registration = publish();
+											await waitForLockWaiters(1);
+										} finally {
+											release();
+											await Promise.allSettled([
+												deleting,
+												...(registration ? [registration] : []),
+											]);
+											StorageService.prototype.deleteObject = originalDelete;
+										}
+										await deleting;
+										await assert.rejects(
+											registration,
+											/Uploaded import file is missing/
+										);
+										assert.equal(await storage.exists(key), false);
+										if (replacing) {
+											assert.equal(
+												(await IngestionService.findById(replacing.id))
+													.credentials.uploadedFilePath,
+												previous
+											);
+											assert.deepEqual(
+												await buffer(await storage.get(previous)),
+												Buffer.from('previous input')
+											);
+											await IngestionService.delete(
+												replacing.id,
+												actor,
+												'fixture'
+											);
+										} else {
+											const sources = await db
+												.select()
+												.from(schema.ingestionSources)
+												.where(
+													eq(schema.ingestionSources.name, consumerName)
+												);
+											assert.equal(sources.length, 0);
+										}
+									}
+									assert.equal((await emails(owner)).length, 0);
+									assert.equal((await attachments(owner)).length, 0);
+									assert.deepEqual(
+										await buffer(await storage.get(`${key}-suffix`)),
+										Buffer.from('exact neighbor')
+									);
+								});
+							}
+						}
+					}
 				} finally {
 					IngestionService.triggerInitialImport = originalTrigger;
 					createConnector = () => assert.fail('Unrelated provider must not run');

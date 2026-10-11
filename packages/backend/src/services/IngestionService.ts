@@ -12,13 +12,11 @@ import type {
 } from '@open-archiver/types';
 import {
 	and,
-	asc,
 	count,
 	countDistinct,
 	desc,
 	eq,
 	gte,
-	gt,
 	inArray,
 	max,
 	min,
@@ -48,7 +46,9 @@ import { streamToBuffer } from '../helpers/streamToBuffer';
 import { isStorageObjectExistsError } from './storage/errors';
 import {
 	cleanupUnreferencedObjects,
-	referencedReceiptInputs,
+	pendingUploadFromRow,
+	pendingUploadPath,
+	referencedUploads,
 	storagePathIdentity,
 	storagePathLockKey,
 	withStorageLocks,
@@ -196,29 +196,6 @@ export class IngestionService {
 		return ['pst_import', 'eml_import', 'mbox_import'];
 	}
 
-	private static pendingUploadPath(credentials: unknown): string | undefined {
-		if (!credentials || typeof credentials !== 'object' || !('type' in credentials)) return;
-		if (
-			credentials.type !== 'pst_import' &&
-			credentials.type !== 'eml_import' &&
-			credentials.type !== 'mbox_import'
-		)
-			return;
-		if ('uploadedFilePath' in credentials && typeof credentials.uploadedFilePath === 'string') {
-			return credentials.uploadedFilePath || undefined;
-		}
-	}
-
-	private static pendingUploadFromRow(
-		row: typeof ingestionSources.$inferSelect
-	): string | undefined {
-		if (!row.credentials) return;
-		const credentials = CryptoService.decryptObject<IngestionCredentials>(row.credentials);
-		if (!credentials)
-			throw new Error(`Cannot verify pending upload references for source ${row.id}`);
-		return this.pendingUploadPath(credentials);
-	}
-
 	private static async protectUploadReference<T>(
 		next: string | undefined,
 		previous: string | undefined,
@@ -239,45 +216,6 @@ export class IngestionService {
 				},
 			};
 		});
-	}
-
-	private static async referencedUploads(
-		tx: Database,
-		candidates: readonly string[],
-		prefix = false
-	): Promise<string[]> {
-		if (candidates.length === 0) return [];
-		const found = new Set<string>(await referencedReceiptInputs(tx, candidates, prefix));
-		let cursor: string | undefined;
-		for (;;) {
-			const rows = await tx
-				.select()
-				.from(ingestionSources)
-				.where(
-					and(
-						inArray(ingestionSources.provider, this.returnFileBasedIngestions()),
-						cursor ? gt(ingestionSources.id, cursor) : undefined
-					)
-				)
-				.orderBy(asc(ingestionSources.id))
-				.limit(100);
-			for (const row of rows) {
-				const path = this.pendingUploadFromRow(row);
-				if (!path) continue;
-				const identity = storagePathIdentity(path);
-				for (const candidate of candidates) {
-					if (
-						prefix
-							? identity.startsWith(storagePathIdentity(candidate))
-							: identity === storagePathIdentity(candidate)
-					) {
-						found.add(candidate);
-					}
-				}
-			}
-			if (rows.length < 100 || found.size === candidates.length) return [...found];
-			cursor = rows[rows.length - 1].id;
-		}
 	}
 
 	public static async releaseCompletedUpload(sessionId: string): Promise<boolean> {
@@ -365,9 +303,7 @@ export class IngestionService {
 			}
 		);
 		if (released) {
-			await cleanupUnreferencedObjects(new StorageService(), [initial.inputPath], (tx) =>
-				this.referencedUploads(tx, [initial.inputPath])
-			);
+			await cleanupUnreferencedObjects(new StorageService(), [initial.inputPath]);
 			await withStorageLocks([storagePathLockKey(initial.inputPath)], async (tx) => {
 				const [current] = await tx
 					.select()
@@ -436,7 +372,7 @@ export class IngestionService {
 		};
 
 		const [newSource] = await this.protectUploadReference(
-			this.pendingUploadPath(providerConfig),
+			pendingUploadPath(providerConfig),
 			undefined,
 			async (tx) => tx.insert(ingestionSources).values(valuesToInsert).returning()
 		);
@@ -632,8 +568,8 @@ export class IngestionService {
 		// The preflight only seeds lock discovery, never the credentials eventually persisted.
 		const preflight = await this.findById(id);
 		const initialPaths = [
-			this.pendingUploadPath(preflight.credentials),
-			this.pendingUploadPath(providerConfig),
+			pendingUploadPath(preflight.credentials),
+			pendingUploadPath(providerConfig),
 		].filter((path): path is string => Boolean(path));
 		const { updatedSource, originalSource } = await withStorageLocks(
 			initialPaths.map(storagePathLockKey),
@@ -671,7 +607,7 @@ export class IngestionService {
 						throw new Error('Upload receipt changed before status publication');
 				}
 				const valuesToUpdate: Partial<typeof ingestionSources.$inferInsert> = { ...rest };
-				const previous = this.pendingUploadPath(originalSource.credentials);
+				const previous = pendingUploadPath(originalSource.credentials);
 				let nextUpload = previous;
 				if (providerConfig) {
 					if (originalSource.provider === 'oauth_mailbox') {
@@ -709,7 +645,7 @@ export class IngestionService {
 							throw new Error(result.message);
 						}
 						valuesToUpdate.credentials = CryptoService.encryptObject(result.merged);
-						nextUpload = this.pendingUploadPath(result.merged);
+						nextUpload = pendingUploadPath(result.merged);
 					}
 				}
 				return {
@@ -958,7 +894,7 @@ export class IngestionService {
 				...new Set([
 					...receiptPaths,
 					...fresh
-						.map((row) => this.pendingUploadFromRow(row))
+						.map((row) => pendingUploadFromRow(row))
 						.filter((path): path is string => Boolean(path)),
 				]),
 			];
@@ -1000,7 +936,7 @@ export class IngestionService {
 				const prefixes = ids.map(
 					(sourceId) => `${config.storage.openArchiverFolderName}/${sourceId}/`
 				);
-				const uploadPrefixes = new Set(await this.referencedUploads(tx, prefixes, true));
+				const uploadPrefixes = new Set(await referencedUploads(tx, prefixes, true));
 				for (const sourceId of ids) {
 					const prefix = `${config.storage.openArchiverFolderName}/${sourceId}/`;
 					const [liveSource] = await tx
@@ -1032,9 +968,7 @@ export class IngestionService {
 					},
 				};
 			});
-			await cleanupUnreferencedObjects(storage, pendingUploads, (tx) =>
-				this.referencedUploads(tx, pendingUploads)
-			);
+			await cleanupUnreferencedObjects(storage, pendingUploads);
 		} catch (error) {
 			logger.error(
 				{ error, sourceIds: ids },

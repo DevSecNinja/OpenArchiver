@@ -67,7 +67,12 @@ test(
 		// Keep the real driver, schema, IAM, CASL and SQL filters; replace only the connection.
 		provideModule('../dist/database/index.js', { db });
 		// These unrelated import graphs start queues/providers (including native SQLite).
-		for (const name of ['StorageService', 'SearchService', 'IngestionService']) {
+		for (const name of [
+			'StorageService',
+			'SearchService',
+			'IngestionService',
+			'CryptoService',
+		]) {
 			const unexpected = () => assert.fail(`${name} must not run in a storage-path check`);
 			const unavailable = new Proxy(function () {}, {
 				apply: unexpected,

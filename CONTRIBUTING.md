@@ -188,8 +188,12 @@ files left by rollback without multiplying random object names. Original filenam
 random-path records remain usable. Corrupt winners are explicit failures, not overwritten.
 
 Per-email deletion commits row/link removals before physical cleanup. Cleanup reacquires exact-path
-stripes and rechecks references in both email and attachment tables; a concurrently published reference
-prevents removal. `deleteObject` removes exactly one object, unlike the existing `delete` prefix contract.
+stripes and always rechecks email/attachment rows, current pending-source credentials and unfinished
+upload receipts. The same lower-level upload scan protects source-prefix cleanup; exact-cleanup callers
+cannot omit it. A pending source without a receipt preserves its selected EML or attachment bytes,
+including Unicode aliases. Creation/replacement either publishes before cleanup's fresh scan or waits
+and rejects a removed input; deleting the last pending source permits exact disposal.
+`deleteObject` removes exactly one object, unlike the existing `delete` prefix contract.
 DB/search/storage are not one atomic system: a crash, failed audit or cleanup error after metadata commit
 can leave unlinked bytes. These are not blindly deleted, and no general repair/GC service is introduced.
 
