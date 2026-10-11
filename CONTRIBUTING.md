@@ -149,8 +149,10 @@ attachment rows. No PST import coverage is implied by these synthetic EML/ZIP fi
 ### Archive path constraints
 
 ZIP entry names and connector folder paths must be relative, slash-separated paths without empty,
-dot or dot-dot components, backslashes or NULs. Absolute, drive-relative and UNC paths are rejected
-before ingestion adds a source namespace. An optional trailing slash denotes a directory.
+dot or dot-dot components, backslashes or NULs. Host-absolute and UNC paths are rejected before
+ingestion adds a source namespace. Drive-prefixed forms (including drive-relative paths) are rejected
+on Windows; on POSIX, `C:relative.eml` and `C:/literal.eml` are ordinary relative names.
+An optional trailing slash denotes a directory.
 On POSIX hosts (including the Linux container), colons and trailing dots/spaces are literal filename
 characters: existing keys remain readable and new uploads, folder names, message IDs and attachments
 retain them without changing original metadata. On Windows hosts, stream/device names and trailing

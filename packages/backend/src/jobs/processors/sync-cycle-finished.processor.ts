@@ -30,9 +30,9 @@ export default async (job: Job<ISyncCycleFinishedJob>) => {
 	let uploadSession = false;
 	try {
 		const session = await SyncSessionService.findById(sessionId);
-		foundSession = true;
 		const completion = await SyncSessionService.completionState(sessionId);
 		uploadSession = completion.upload;
+		foundSession = true;
 		if (!completion.complete || session.ingestionSourceId !== ingestionSourceId) {
 			logger.warn(
 				{ ingestionSourceId, sessionId },
