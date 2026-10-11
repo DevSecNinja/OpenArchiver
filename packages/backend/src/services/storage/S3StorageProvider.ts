@@ -145,28 +145,50 @@ export class S3StorageProvider implements IStorageProvider {
 	}
 
 	async delete(path: string): Promise<void> {
-		// List all objects with the given prefix
-		const listCommand = new ListObjectsV2Command({
-			Bucket: this.bucket,
-			Prefix: path,
-		});
-		const listedObjects = await this.client.send(listCommand);
-
-		if (!listedObjects.Contents || listedObjects.Contents.length === 0) {
-			return;
-		}
-
-		// Create a list of objects to delete
-		const deleteParams = {
-			Bucket: this.bucket,
-			Delete: {
-				Objects: listedObjects.Contents.map(({ Key }) => ({ Key })),
-			},
-		};
-
-		// Delete the objects
-		const deleteCommand = new DeleteObjectsCommand(deleteParams);
-		await this.client.send(deleteCommand);
+		let continuationToken: string | undefined;
+		const seenTokens = new Set<string>();
+		do {
+			const page = await this.client.send(
+				new ListObjectsV2Command({
+					Bucket: this.bucket,
+					Prefix: path,
+					MaxKeys: 1000,
+					ContinuationToken: continuationToken,
+				})
+			);
+			const nextToken = page.IsTruncated ? page.NextContinuationToken : undefined;
+			if (page.IsTruncated && (!nextToken || seenTokens.has(nextToken))) {
+				throw new Error(
+					'S3 returned a truncated listing without a progressing continuation token'
+				);
+			}
+			if (nextToken) seenTokens.add(nextToken);
+			if ((page.Contents?.length ?? 0) > 1000) {
+				throw new Error('S3 returned more objects than the requested deletion batch size');
+			}
+			const objects = (page.Contents ?? []).map(({ Key }) => {
+				if (!Key) {
+					throw new Error('S3 returned an object without a key while deleting a prefix');
+				}
+				return { Key };
+			});
+			if (objects.length > 0) {
+				const result = await this.client.send(
+					new DeleteObjectsCommand({
+						Bucket: this.bucket,
+						Delete: { Objects: objects },
+					})
+				);
+				if (result.Errors?.length) {
+					logger.error(
+						{ bucket: this.bucket, prefix: path, errors: result.Errors },
+						'S3 prefix deletion was incomplete'
+					);
+					throw new Error(`S3 failed to delete ${result.Errors.length} object(s)`);
+				}
+			}
+			continuationToken = nextToken;
+		} while (continuationToken);
 	}
 
 	async exists(path: string): Promise<boolean> {
