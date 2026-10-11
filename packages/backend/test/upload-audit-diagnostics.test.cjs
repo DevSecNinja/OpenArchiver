@@ -320,6 +320,26 @@ test(
 		);
 
 		await t.test(
+			'complete notes normalize embedded mailbox separators without changing canonical identity',
+			async () => {
+				const mailbox = 'a\r\nb@example.test';
+				const ctx = await session([mailbox]);
+				await record(ctx, mailbox, 'Parser\r\nfailed\0 on input');
+				const state = await rowFor(ctx);
+				assert.equal(state.uploadReceipt.expectedMailboxes[0], mailbox);
+				assert.equal(state.uploadReceipt.results[0].mailbox, mailbox);
+				assert.deepEqual(state.errorMessages, [
+					'a b@example.test: Parser failed  on input',
+				]);
+				await finalize(ctx);
+				assert.equal(
+					(await sourceRows([ctx.sourceId]))[0].lastSyncStatusMessage,
+					'Sync cycle completed with 1 error(s):\na b@example.test: Parser failed  on input'
+				);
+			}
+		);
+
+		await t.test(
 			'only absent or blank messages use generic fallback and redundant failure cannot spoil success',
 			async () => {
 				const ctx = await session(['a@example.test', 'b@example.test']);

@@ -14,6 +14,7 @@ import { normalizeEmailAddress } from '../helpers/emailAddress';
 import { truncateToBytes } from '../helpers/truncateToBytes';
 import {
 	readUploadReceipt,
+	hasNewerUploadClaim,
 	uploadReceiptComplete,
 	uploadReceiptSuccessful,
 	uploadedInputPath,
@@ -80,6 +81,8 @@ export interface MailboxResultOutcome {
 	totalFailed: number;
 	errorMessages: string[];
 }
+
+export type UploadDispatchOutcome = 'aborted' | 'complete' | 'obsolete' | 'unknown';
 
 export class SyncSessionService {
 	/**
@@ -194,44 +197,84 @@ export class SyncSessionService {
 	public static async abortUploadDispatch(
 		sessionId: string,
 		ingestionSourceId: string,
-		inputPath: string
-	): Promise<boolean> {
-		return withStorageLocks([storagePathLockKey(inputPath)], async (tx) => {
-			await tx
-				.select({ id: ingestionSources.id })
-				.from(ingestionSources)
-				.where(eq(ingestionSources.id, ingestionSourceId))
-				.for('update');
-			const [session] = await tx
-				.select()
-				.from(syncSessions)
-				.where(eq(syncSessions.id, sessionId))
-				.for('update');
-			if (!session) return { keys: [], run: async () => true };
-			const receipt = readUploadReceipt(session.uploadReceipt);
-			if (
-				!receipt ||
-				receipt.sourceId !== ingestionSourceId ||
-				session.ingestionSourceId !== ingestionSourceId ||
-				receipt.inputPath !== inputPath ||
-				receipt.expectedMailboxes.length !== session.totalMailboxes
-			)
-				throw new Error('Cannot abort an unknown upload dispatch receipt');
-			return {
-				keys: [],
-				run: async () => {
-					if (uploadReceiptSuccessful(receipt)) return false;
-					await tx
-						.update(syncSessions)
-						.set({
-							uploadReceipt: { ...receipt, dispatchAborted: true },
-							lastActivityAt: new Date(),
-						})
-						.where(eq(syncSessions.id, sessionId));
-					return true;
-				},
-			};
-		});
+		inputPath: string,
+		claimStartedAt?: Date | null
+	): Promise<UploadDispatchOutcome> {
+		return withStorageLocks<UploadDispatchOutcome>(
+			[storagePathLockKey(inputPath)],
+			async (tx) => {
+				const [source] = await tx
+					.select()
+					.from(ingestionSources)
+					.where(eq(ingestionSources.id, ingestionSourceId))
+					.for('update');
+				const sessions = await tx
+					.select()
+					.from(syncSessions)
+					.where(eq(syncSessions.ingestionSourceId, ingestionSourceId))
+					.for('update');
+				const session = sessions.find((row) => row.id === sessionId);
+				const receipt = readUploadReceipt(session?.uploadReceipt);
+				if (
+					session &&
+					(!receipt ||
+						receipt.sourceId !== ingestionSourceId ||
+						session.ingestionSourceId !== ingestionSourceId ||
+						receipt.inputPath !== inputPath ||
+						receipt.expectedMailboxes.length !== session.totalMailboxes)
+				)
+					throw new Error('Cannot abort an unknown upload dispatch receipt');
+				if (receipt && uploadReceiptSuccessful(receipt))
+					return { keys: [], run: async () => 'complete' };
+				if (!source) return { keys: [], run: async () => 'obsolete' };
+				const credentials = source.credentials
+					? CryptoService.decryptObject<IngestionCredentials>(source.credentials)
+					: null;
+				if (!credentials)
+					throw new Error('Cannot verify upload dispatch source credentials');
+				if (
+					uploadedInputPath(credentials) !== inputPath ||
+					!['importing', 'syncing'].includes(source.status) ||
+					(claimStartedAt &&
+						source.lastSyncStartedAt?.getTime() !== claimStartedAt.getTime()) ||
+					(session
+						? hasNewerUploadClaim(session, source.lastSyncStartedAt, sessions)
+						: claimStartedAt && sessions.some((row) => row.createdAt >= claimStartedAt))
+				)
+					return { keys: [], run: async () => 'obsolete' };
+				if (!session || !receipt || !claimStartedAt) {
+					return {
+						keys: [],
+						run: async () => {
+							logger.error(
+								{
+									sessionId,
+									ingestionSourceId,
+									reason: !session
+										? 'missing-current-receipt'
+										: 'missing-claim-epoch',
+								},
+								'Upload dispatch outcome is unknown; retaining current input and status for sessionless recovery'
+							);
+							return 'unknown';
+						},
+					};
+				}
+				return {
+					keys: [],
+					run: async () => {
+						await tx
+							.update(syncSessions)
+							.set({
+								uploadReceipt: { ...receipt, dispatchAborted: true },
+								lastActivityAt: new Date(),
+							})
+							.where(eq(syncSessions.id, sessionId));
+						return 'aborted';
+					},
+				};
+			}
+		);
 	}
 
 	/**
@@ -397,7 +440,10 @@ export class SyncSessionService {
 						: '';
 				notes.push(
 					truncateToBytes(
-						`${mailbox}: ${diagnostic || 'upload mailbox did not complete successfully'}`,
+						`${mailbox}: ${diagnostic || 'upload mailbox did not complete successfully'}`.replace(
+							/[\r\n\0]+/g,
+							' '
+						),
 						1024
 					)
 				);

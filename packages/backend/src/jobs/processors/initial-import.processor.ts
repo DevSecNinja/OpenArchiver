@@ -12,6 +12,8 @@ export default async (job: Job<IInitialImportJob>) => {
 	const { ingestionSourceId } = job.data;
 	logger.info({ ingestionSourceId }, 'Starting initial import master job');
 	let inputPath: string | undefined;
+	let claimStartedAt: Date | null | undefined;
+	let sessionId: string | undefined;
 
 	try {
 		// One conditional UPDATE, for the same reason continuous-sync uses one: a second import
@@ -27,6 +29,7 @@ export default async (job: Job<IInitialImportJob>) => {
 		}
 
 		inputPath = uploadedInputPath(source.credentials);
+		claimStartedAt = source.lastSyncStartedAt;
 		const connector = EmailProviderFactory.createConnector(source);
 
 		// Phase 1: Collect user emails from the provider (async generator — no full buffering
@@ -58,7 +61,7 @@ export default async (job: Job<IInitialImportJob>) => {
 		// Phase 2: Create a session BEFORE dispatching any jobs to avoid a race condition
 		// where a process-mailbox job finishes before the session's totalMailboxes is set.
 		const declaredMailboxes = inputPath ? [...new Set(userEmails)] : userEmails;
-		const sessionId = await SyncSessionService.create(
+		sessionId = await SyncSessionService.create(
 			ingestionSourceId,
 			userEmails.length,
 			true,
@@ -70,11 +73,31 @@ export default async (job: Job<IInitialImportJob>) => {
 			'Dispatching process-mailbox jobs for initial import'
 		);
 
-		await enqueueMailboxJobs(ingestionSourceId, declaredMailboxes, sessionId, inputPath);
+		const outcome = await enqueueMailboxJobs(
+			ingestionSourceId,
+			declaredMailboxes,
+			sessionId,
+			inputPath,
+			claimStartedAt
+		);
+		if (outcome !== 'dispatched') return;
 
 		logger.info({ ingestionSourceId, sessionId }, 'Finished dispatching initial import jobs');
 	} catch (error) {
 		logger.error({ err: error, ingestionSourceId }, 'Error in initial import master job');
+		if (inputPath) {
+			const currentFailure = await IngestionService.markUploadDispatchFailed(
+				ingestionSourceId,
+				inputPath,
+				claimStartedAt,
+				sessionId,
+				{
+					lastSyncStatusMessage: `Initial import failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+				}
+			);
+			if (currentFailure) throw error;
+			return;
+		}
 		await IngestionService.update(
 			ingestionSourceId,
 			{

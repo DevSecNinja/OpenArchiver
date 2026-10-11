@@ -222,7 +222,8 @@ Referenced objects are retained; undecipherable relevant credentials fail cleanu
 
 ### Uploaded-input completion
 
-Upload failure/skip notes preserve concrete diagnostics, normalize CR/LF/NUL separators, and cap each
+Upload failure/skip notes preserve concrete diagnostics, normalize CR/LF/NUL across the complete
+mailbox-plus-diagnostic text without changing canonical mailbox identity, and cap each
 complete mailbox-plus-message note at 1,024 UTF-8 bytes using `truncateToBytes`. At most five notes are
 retained, without changing canonical result idempotency; only missing or blank messages use generic
 fallback text. These upload-specific bounds do not change the legacy remote-provider result path.
@@ -236,6 +237,14 @@ retiring matching aborted receipts. Repointed, unknown or mismatched claims are 
 Only the replacement's complete canonical successes permit release. Keyed upload finalizers remove
 both successful and failed terminal job records so the stale-session sweep can retry the same ID after
 cleanup or receipt-marking failure.
+
+Lost dispatch acknowledgements are classified against the original claim epoch and freshly locked
+source/session state. Only a valid failed current dispatch is aborted and made retryable; canonical
+success requires an existing successful receipt. A retired, purged or replaced dispatch is obsolete,
+not proof of success, and is not replayed. A missing receipt for a still-current active claim is logged
+as unknown, with its input and source state retained until existing sessionless recovery makes it
+retryable. Master error publication repeats claim-epoch and sibling-session guards under lock so a
+newer same-key claim cannot be overwritten between compensation and the catch handler.
 
 Each new receipt explicitly owns its original credential claim. Releasing that claim and clearing
 matching credentials commit atomically before physical cleanup. Later cleanup retries never clear
@@ -408,15 +417,24 @@ mail contents, attachments, or cloud credentials are used.
 The same runner also discovers the focused HTTP and PostgreSQL storage authorization checks described
 above. CI supplies the isolated PostgreSQL service; local database coverage requires the explicit test URL.
 
+The runner also exercises the real i18next filesystem backend and HTTP middleware against
+freshly compiled translation assets. Localization regressions cover all 11 packaged languages,
+an explicitly configured English fallback, controlled rejection of malformed language/namespace
+paths, and query/header handling without a language detector. Run just these tests with
+`pnpm --filter @open-archiver/backend test:localization` after building. See the
+[localization test notes](./packages/backend/test/README.md) for advisory applicability and
+the separate read-only, non-root dependency-fixture validation boundary.
+
 ### Coverage limits and follow-up work
 
-This is a build, policy/HTTP/storage-authorization/parser, and frontend-adapter regression gate,
+This is a build, policy/HTTP/storage-authorization/parser/localization, and frontend-adapter regression gate,
 not end-to-end archive validation.
 Frontend regressions exercise compiled session and proxy behavior against a synthetic loopback API,
 not real API authentication. The gate does not establish all policy interpolation or database filtering,
 full ingestion, indexing/search, export, deletion, or matching database/archive restoration.
 The policy tests import the compiled policy module, HTTP checks use synthetic loopback fixtures, and
 storage checks call the compiled service with isolated database rows, not the application entry point.
+Localization checks load packaged translations through the real filesystem backend and HTTP middleware.
 The compiled application-boundary tests and MIME/attachment coverage limits are documented above.
 
 Only `esbuild` is approved in `pnpm-workspace.yaml` `allowBuilds`, and `sqlite3` is explicitly denied,

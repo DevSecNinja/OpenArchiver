@@ -1,5 +1,5 @@
 import { ingestionQueue } from '../queues';
-import { SyncSessionService } from '../../services/SyncSessionService';
+import { SyncSessionService, type UploadDispatchOutcome } from '../../services/SyncSessionService';
 import { logger } from '../../config/logger';
 
 /**
@@ -23,8 +23,9 @@ export const enqueueMailboxJobs = async (
 	ingestionSourceId: string,
 	userEmails: string[],
 	sessionId: string,
-	uploadInputPath?: string
-): Promise<void> => {
+	uploadInputPath?: string,
+	claimStartedAt?: Date | null
+): Promise<'dispatched' | Exclude<UploadDispatchOutcome, 'aborted'>> => {
 	try {
 		for (let i = 0; i < userEmails.length; i += ENQUEUE_PAGE_SIZE) {
 			await ingestionQueue.addBulk(
@@ -39,20 +40,22 @@ export const enqueueMailboxJobs = async (
 				}))
 			);
 		}
+		return 'dispatched';
 	} catch (error) {
 		if (uploadInputPath) {
 			try {
-				const aborted = await SyncSessionService.abortUploadDispatch(
+				const outcome = await SyncSessionService.abortUploadDispatch(
 					sessionId,
 					ingestionSourceId,
-					uploadInputPath
+					uploadInputPath,
+					claimStartedAt
 				);
-				if (!aborted) {
+				if (outcome !== 'aborted') {
 					logger.warn(
-						{ error, ingestionSourceId, sessionId },
-						'Dispatch failed after independently proven canonical upload success'
+						{ error, ingestionSourceId, sessionId, outcome },
+						'Not replaying an upload dispatch without a failed current claim'
 					);
-					return;
+					return outcome;
 				}
 			} catch (abortError) {
 				throw new AggregateError(

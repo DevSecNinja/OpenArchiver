@@ -32,6 +32,7 @@ export default async (job: Job<IContinuousSyncJob>) => {
 	// connector construction throws synchronously on damaged credentials (MSAL validates its
 	// config), and exactly that left a source dead on a production instance.
 	const inputPath = uploadedInputPath(source.credentials);
+	let sessionId: string | undefined;
 	try {
 		const connector = EmailProviderFactory.createConnector(source);
 
@@ -84,7 +85,7 @@ export default async (job: Job<IContinuousSyncJob>) => {
 
 		// Phase 2: Create a session BEFORE dispatching any jobs.
 		const declaredMailboxes = inputPath ? [...new Set(userEmails)] : userEmails;
-		const sessionId = await SyncSessionService.create(
+		sessionId = await SyncSessionService.create(
 			ingestionSourceId,
 			userEmails.length,
 			false,
@@ -96,7 +97,14 @@ export default async (job: Job<IContinuousSyncJob>) => {
 			'Dispatching process-mailbox jobs for continuous sync'
 		);
 
-		await enqueueMailboxJobs(source.id, declaredMailboxes, sessionId, inputPath);
+		const outcome = await enqueueMailboxJobs(
+			source.id,
+			declaredMailboxes,
+			sessionId,
+			inputPath,
+			source.lastSyncStartedAt
+		);
+		if (outcome !== 'dispatched') return;
 
 		// The status will be set back to 'active' by the 'sync-cycle-finished' job
 		// once all the mailboxes have been processed.
@@ -106,6 +114,23 @@ export default async (job: Job<IContinuousSyncJob>) => {
 		);
 	} catch (error) {
 		logger.error({ err: error, ingestionSourceId }, 'Continuous sync job failed.');
+		if (inputPath) {
+			const currentFailure = await IngestionService.markUploadDispatchFailed(
+				ingestionSourceId,
+				inputPath,
+				source.lastSyncStartedAt,
+				sessionId,
+				{
+					lastSyncFinishedAt: new Date(),
+					lastSyncStatusMessage:
+						error instanceof Error
+							? error.message
+							: 'An unknown error occurred during sync.',
+				}
+			);
+			if (currentFailure) throw error;
+			return;
+		}
 		await IngestionService.update(
 			ingestionSourceId,
 			{

@@ -346,6 +346,58 @@ export class IngestionService {
 		return released;
 	}
 
+	public static async markUploadDispatchFailed(
+		id: string,
+		inputPath: string,
+		claimStartedAt: Date | null | undefined,
+		sessionId: string | undefined,
+		failure: Pick<UpdateIngestionSourceDto, 'lastSyncStatusMessage' | 'lastSyncFinishedAt'>
+	): Promise<boolean> {
+		return withStorageLocks([storagePathLockKey(inputPath)], async (tx) => {
+			const [source] = await tx
+				.select()
+				.from(ingestionSources)
+				.where(eq(ingestionSources.id, id))
+				.for('update');
+			const sessions = await tx
+				.select()
+				.from(syncSessions)
+				.where(eq(syncSessions.ingestionSourceId, id))
+				.for('update');
+			const current = sessions.find((row) => row.id === sessionId);
+			const credentials = source ? this.decryptSource(source)?.credentials : null;
+			const ownsClaim = Boolean(
+				source &&
+					credentials &&
+					claimStartedAt &&
+					source.lastSyncStartedAt?.getTime() === claimStartedAt.getTime() &&
+					uploadedInputPath(credentials) === inputPath &&
+					['importing', 'syncing'].includes(source.status) &&
+					(sessionId
+						? current &&
+							!hasNewerUploadClaim(current, source.lastSyncStartedAt, sessions)
+						: !sessions.some((row) => row.createdAt >= claimStartedAt))
+			);
+			return {
+				keys: [],
+				run: async () => {
+					if (!ownsClaim) {
+						logger.warn(
+							{ ingestionSourceId: id, sessionId },
+							'Preserving current source state after an obsolete or unknown upload failure'
+						);
+						return false;
+					}
+					await tx
+						.update(ingestionSources)
+						.set({ ...failure, status: 'error' })
+						.where(eq(ingestionSources.id, id));
+					return true;
+				},
+			};
+		});
+	}
+
 	public static async create(
 		dto: CreateIngestionSourceDto,
 		userId: string,
