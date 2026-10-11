@@ -5,7 +5,7 @@ ENGINE="${CONTAINER_ENGINE:-docker}"
 case "$ENGINE" in docker|podman) ;; *) echo "Use CONTAINER_ENGINE=docker or podman" >&2; exit 2 ;; esac
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
-DOVECOT_IMAGE="docker.io/dovecot/dovecot:2.4.4@sha256:723e3392fe16c6fad8ddc605ea767cc01b4bad9cd9f13eb1dbac15e79c89b2d4"
+DOVECOT_IMAGE="docker.io/dovecot/dovecot:2.4.4-root@sha256:d6b2f80db2e656a9250583712a82397e2752b35ad7e4e2e71c85fdc0d510137d"
 NODE_IMAGE="docker.io/library/node:22-bookworm-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392"
 
 for tool in "$ENGINE" timeout; do
@@ -69,14 +69,10 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-mkdir "$scratch/certs"
+# The private 0700 scratch parent prevents host access; the helper writes as UID 1000.
+mkdir -m 0733 "$scratch/certs"
 limits=(--memory 256m --memory-swap 256m --cpus 1 --pids-limit 128 --read-only --cap-drop ALL --security-opt no-new-privileges)
-helper_user="$(id -u):$(id -g)"
-# Rootless Podman's container root maps to the invoking host user, not host root.
-if [[ "$ENGINE" == podman ]] && [[ "$("$ENGINE" info --format '{{.Host.Security.Rootless}}')" == true ]]; then
-	helper_user=0:0
-fi
-"$ENGINE" create --pull never --name "$cert_helper" "${limits[@]}" --network none --user "$helper_user" \
+"$ENGINE" create --pull never --name "$cert_helper" "${limits[@]}" --network none --user 1000:1000 \
 	--mount "type=bind,source=$scratch/certs,target=/fixture" \
 	--entrypoint /bin/sh "$DOVECOT_IMAGE" -ec '
 		read memory < /sys/fs/cgroup/memory.max
@@ -84,7 +80,10 @@ fi
 		read pids < /sys/fs/cgroup/pids.max
 		read swap < /sys/fs/cgroup/memory.swap.max
 		test "$memory|$cpu|$pids|$swap" = "268435456|100000 100000|128|0"
-		printf "Certificate helper: effective memory=256MiB cpu=1 pids=128 no swap\n"
+		test "$(id -u):$(id -g)" = "1000:1000"
+		grep -Eq "^CapEff:[[:space:]]+0+$" /proc/self/status
+		grep -Eq "^NoNewPrivs:[[:space:]]+1$" /proc/self/status
+		printf "Certificate helper: effective memory=256MiB cpu=1 pids=128 no swap UID/GID=1000 CapEff=0 NNP=1\n"
 		openssl version
 		openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj "/CN=Open Archiver fixture CA" \
 			-addext "basicConstraints=critical,CA:TRUE" -addext "keyUsage=critical,keyCertSign,cRLSign" \
@@ -95,6 +94,8 @@ fi
 			"basicConstraints=critical,CA:FALSE" "keyUsage=critical,digitalSignature,keyEncipherment" > /fixture/server.ext
 		openssl x509 -req -in /fixture/server.csr -CA /fixture/ca.crt -CAkey /fixture/ca.key \
 			-CAcreateserial -days 2 -extfile /fixture/server.ext -out /fixture/tls.crt
+		chmod 0444 /fixture/tls.key /fixture/tls.crt /fixture/ca.crt
+		rm /fixture/ca.key
 	' >/dev/null
 cert_helper_created=true
 certificate_result=0
@@ -107,17 +108,16 @@ tail -c 16384 "$scratch/certificate.log"
 timeout 10s "$ENGINE" rm "$cert_helper" >/dev/null
 cert_helper_created=false
 mv "$scratch/certs/ca.crt" "$scratch/ca.crt"
-rm -- "$scratch/certs/ca.key" "$scratch/certs/server.csr" "$scratch/certs/ca.srl" "$scratch/certs/server.ext"
+rm -- "$scratch/certs/server.csr" "$scratch/certs/ca.srl" "$scratch/certs/server.ext"
 chmod 0755 "$scratch/certs"
-chmod 0444 "$scratch/certs/tls.key" "$scratch/certs/tls.crt" "$scratch/ca.crt"
 
-"$ENGINE" create --pull never --name "$server" "${limits[@]}" --network none \
+"$ENGINE" create --pull never --name "$server" "${limits[@]}" --network none --user 1000:1000 \
 	--tmpfs /tmp:rw,nosuid,nodev,noexec,size=16m \
 	--tmpfs /run:rw,nosuid,nodev,noexec,size=16m,mode=1777 \
 	--tmpfs /srv/vmail:rw,nosuid,nodev,noexec,size=16m,uid=1000,gid=1000,mode=0700 \
 	--mount "type=bind,source=$scratch/certs,target=/etc/dovecot/ssl,readonly" \
 	--mount "type=bind,source=$SCRIPT_DIR/dovecot.conf,target=/etc/dovecot/conf.d/99-interop.conf,readonly" \
-	--env USER_PASSWORD=synthetic-imap-fixture-password "$DOVECOT_IMAGE" >/dev/null
+	--env 'USER_PASSWORD={PLAIN}synthetic-imap-fixture-password' "$DOVECOT_IMAGE" >/dev/null
 server_created=true
 "$ENGINE" start "$server" >/dev/null
 "$ENGINE" create --pull never --name "$client" "${limits[@]}" --network "container:$server" \
@@ -147,8 +147,21 @@ for container in "$server" "$client"; do
 		'read memory < /sys/fs/cgroup/memory.max; read cpu < /sys/fs/cgroup/cpu.max; read pids < /sys/fs/cgroup/pids.max; read swap < /sys/fs/cgroup/memory.swap.max; printf "%s|%s|%s|%s" "$memory" "$cpu" "$pids" "$swap"')"
 	[[ "$effective" == '268435456|100000 100000|128|0' ]] ||
 		{ echo "Missing effective cgroup-v2 limits: $effective" >&2; exit 1; }
-	echo "$container: effective memory=256MiB cpu=1 pids=128; read-only, unprivileged"
+	timeout 5s "$ENGINE" exec "$container" /bin/sh -ec '
+		test "$(id -u):$(id -g)" = "1000:1000"
+		for status in /proc/self/status /proc/1/status; do
+			grep -Eq "^Uid:[[:space:]]+1000[[:space:]]+1000[[:space:]]+1000[[:space:]]+1000$" "$status"
+			grep -Eq "^Gid:[[:space:]]+1000[[:space:]]+1000[[:space:]]+1000[[:space:]]+1000$" "$status"
+			grep -Eq "^CapEff:[[:space:]]+0+$" "$status"
+			grep -Eq "^NoNewPrivs:[[:space:]]+1$" "$status"
+		done
+	'
+	echo "$container: effective memory=256MiB cpu=1 pids=128 UID/GID=1000 CapEff=0 NNP=1; read-only"
 done
+filecaps="$(timeout 5s "$ENGINE" exec "$server" getcap \
+	/dovecot/libexec/dovecot/imap-login /dovecot/libexec/dovecot/anvil)"
+[[ -z "$filecaps" ]] || { echo "Unexpected Dovecot executable file capabilities: $filecaps" >&2; exit 1; }
+echo "Dovecot imap-login/anvil have no file capabilities"
 version="$(timeout 5s "$ENGINE" exec "$server" /dovecot/sbin/dovecot --version)"
 [[ "$version" == 2.4.4* ]] || { echo "Unexpected Dovecot version: $version" >&2; exit 1; }
 echo "Dovecot $version; no published ports or external network"

@@ -217,7 +217,9 @@ The first local preparation stopped before dependency installation because effec
 resource limits could not be verified. No local interoperability success is claimed.
 The OSS workflow therefore includes one bounded hosted-Linux step that reuses its existing
 compiled build and runs the fixture explicitly; this initial CI wiring is not itself a
-runtime-validation result.
+runtime-validation result. The first hosted attempt on `079b15ad` verified the kernel limits
+but failed before protocol testing: the standard Dovecot image's `imap-login` and `anvil`
+file capabilities caused `execv` to fail with `EPERM` under the required restrictions.
 It requires a prebuilt Linux amd64 workspace, Docker or Podman with effective cgroup-v2
 limits, and existing Bash and `timeout` tools. Certificate generation uses the existing
 OpenSSL in the same pinned Dovecot image, not a host tool installation. It does not install
@@ -230,13 +232,20 @@ bash packages/backend/test/integration/run-imap-interop.sh run
 # Use CONTAINER_ENGINE=podman for either command when appropriate.
 ```
 
-The runner pins official Dovecot 2.4.4 to manifest
-`sha256:723e3392fe16c6fad8ddc605ea767cc01b4bad9cd9f13eb1dbac15e79c89b2d4`
+The runner pins the official Dovecot 2.4.4 `-root` packaging variant to manifest
+`sha256:d6b2f80db2e656a9250583712a82397e2752b35ad7e4e2e71c85fdc0d510137d`
 and reuses the existing frontend fixture's pinned Node 22 image. On 2026-10-11, registry
 manifest/config hashes were verified without pulling layers; the Dovecot tag was last pushed
 on 2026-06-03 and the Node tag on 2026-10-06, both beyond the 72-hour gate. The choice follows
 [ImapFlow's Dovecot integration fixture](https://github.com/postalsys/imapflow/tree/v2.3.0/test/integration),
 but does **not** copy its certificate-verification bypass or plaintext-auth override.
+The variant omits the layer that adds executable file capabilities; this is a packaging
+choice, **not root execution**. Every helper/server/client is explicitly UID/GID 1000:1000.
+Fixture configuration uses the documented `vmail` users, unprivileged ports and no-chroot
+login mode. The runner checks actual UID/GID, zero effective capabilities and
+`NoNewPrivs=1`, plus absence of file capabilities on `imap-login`/`anvil`, before protocol
+testing. It does not add capabilities, alter executable xattrs, copy binaries or build an
+image. This variant remains runtime-unvalidated until a successful hosted result is recorded.
 
 Each run generates an owned, short-lived CA and server certificate with localhost/IP SANs
 in a network-disabled, capped certificate helper that exits and is removed before the server
