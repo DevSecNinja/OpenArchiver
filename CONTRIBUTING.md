@@ -255,15 +255,24 @@ mail contents, attachments, or cloud credentials are used.
 The same runner also discovers the focused HTTP and PostgreSQL storage authorization checks described
 above. CI supplies the isolated PostgreSQL service; local database coverage requires the explicit test URL.
 
+The runner also exercises the real i18next filesystem backend and HTTP middleware against
+freshly compiled translation assets. Localization regressions cover all 11 packaged languages,
+an explicitly configured English fallback, controlled rejection of malformed language/namespace
+paths, and query/header handling without a language detector. Run just these tests with
+`pnpm --filter @open-archiver/backend test:localization` after building. See the
+[localization test notes](./packages/backend/test/README.md) for advisory applicability and
+the separate read-only, non-root dependency-fixture validation boundary.
+
 ### Coverage limits and follow-up work
 
-This is a build, policy/HTTP/storage-authorization/parser, and frontend-adapter regression gate,
+This is a build, policy/HTTP/storage-authorization/parser/localization, and frontend-adapter regression gate,
 not end-to-end archive validation.
 Frontend regressions exercise compiled session and proxy behavior against a synthetic loopback API,
 not real API authentication. The gate does not establish all policy interpolation or database filtering,
 full ingestion, indexing/search, export, deletion, or matching database/archive restoration.
 The policy tests import the compiled policy module, HTTP checks use synthetic loopback fixtures, and
 storage checks call the compiled service with isolated database rows, not the application entry point.
+Localization checks load packaged translations through the real filesystem backend and HTTP middleware.
 The compiled application-boundary tests and MIME/attachment coverage limits are documented above.
 
 Only `esbuild` is approved in `pnpm-workspace.yaml` `allowBuilds`, and `sqlite3` is explicitly denied,
