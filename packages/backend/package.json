@@ -26,8 +26,8 @@
 		"db:migrate:dev": "ts-node-dev src/database/migrate.ts"
 	},
 	"dependencies": {
-		"@aws-sdk/client-s3": "^3.844.0",
-		"@aws-sdk/lib-storage": "^3.844.0",
+		"@aws-sdk/client-s3": "^3.1147.0",
+		"@aws-sdk/lib-storage": "^3.1147.0",
 		"@azure/msal-node": "^3.6.3",
 		"@casl/ability": "^6.8.1",
 		"@microsoft/microsoft-graph-client": "^3.0.7",
