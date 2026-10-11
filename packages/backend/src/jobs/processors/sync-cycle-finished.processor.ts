@@ -47,7 +47,9 @@ export default async (job: Job<ISyncCycleFinishedJob>) => {
 			throw new Error('Upload receipt has no canonical failure result');
 		if (
 			completion.upload &&
-			(!completion.matchesCurrentInput || completion.dispositionHandled)
+			(!completion.matchesCurrentInput ||
+				completion.dispositionHandled ||
+				completion.inputClaimReleased)
 		) {
 			// An old input's disposition must not alter the replacement import's status.
 			if (failedMailboxes === 0) await IngestionService.releaseCompletedUpload(sessionId);

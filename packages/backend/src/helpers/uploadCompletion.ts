@@ -8,6 +8,7 @@ const receiptSchema = z
 		inputPath: z.string().min(1),
 		discoveryClosed: z.literal(true),
 		dispatchAborted: z.literal(true).optional(),
+		inputClaim: z.enum(['owned', 'released']).optional(),
 		disposition: z.literal('handled').optional(),
 		expectedMailboxes: z.array(z.string().min(1)).min(1),
 		results: z.array(
@@ -39,6 +40,17 @@ export interface UploadMailboxIdentity {
 	sourceId: string;
 	inputPath: string;
 	mailbox: string;
+}
+
+export function hasNewerUploadClaim(
+	session: { id: string; createdAt: Date },
+	lastSyncStartedAt: Date | null,
+	sessions: readonly { id: string; createdAt: Date }[]
+): boolean {
+	return (
+		Boolean(lastSyncStartedAt && lastSyncStartedAt > session.createdAt) ||
+		sessions.some((other) => other.id !== session.id && other.createdAt >= session.createdAt)
+	);
 }
 
 export function readUploadReceipt(value: unknown): UploadCompletionReceipt | null {

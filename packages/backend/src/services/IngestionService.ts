@@ -75,6 +75,7 @@ import { truncateToBytes } from '../helpers/truncateToBytes';
 import { assertSafeRelativePath } from '../helpers/relativePath';
 import {
 	readUploadReceipt,
+	hasNewerUploadClaim,
 	uploadReceiptSuccessful,
 	uploadedInputPath,
 } from '../helpers/uploadCompletion';
@@ -233,6 +234,7 @@ export class IngestionService {
 		)
 			return false;
 		if (initial.disposition === 'handled') return true;
+		if (initial.inputClaim === undefined) return false;
 		const released = await withStorageLocks(
 			[storagePathLockKey(initial.inputPath)],
 			async (tx) => {
@@ -262,14 +264,15 @@ export class IngestionService {
 					!uploadReceiptSuccessful(receipt)
 				)
 					return { keys: [], run: async () => false };
-				if (receipt.disposition === 'handled') {
+				if (receipt.disposition === 'handled' || receipt.inputClaim === undefined) {
 					return { keys: [], run: async () => false };
 				}
 				const matchesCurrentInput = uploadedInputPath(credentials) === receipt.inputPath;
-				if (
+				const ownsCurrentClaim =
+					receipt.inputClaim === 'owned' &&
 					matchesCurrentInput &&
-					(source.status === 'paused' || source.status === 'error')
-				) {
+					!hasNewerUploadClaim(current, source.lastSyncStartedAt, sessions);
+				if (ownsCurrentClaim && (source.status === 'paused' || source.status === 'error')) {
 					return { keys: [], run: async () => false };
 				}
 				const otherInputNeeded = sessions.some((row) => {
@@ -282,12 +285,13 @@ export class IngestionService {
 						(other.inputPath === receipt.inputPath && !uploadReceiptSuccessful(other))
 					);
 				});
-				if (otherInputNeeded) return { keys: [], run: async () => false };
+				if (receipt.inputClaim === 'owned' && otherInputNeeded)
+					return { keys: [], run: async () => false };
 				return {
 					keys: [],
 					run: async () => {
 						// Keep display/original-name metadata, but consumed inputs no longer count as pending references.
-						if (matchesCurrentInput) {
+						if (ownsCurrentClaim) {
 							const updated = { ...credentials };
 							if ('uploadedFilePath' in updated) delete updated.uploadedFilePath;
 							await tx
@@ -296,6 +300,12 @@ export class IngestionService {
 									credentials: CryptoService.encryptObject(updated),
 								})
 								.where(eq(ingestionSources.id, source.id));
+						}
+						if (receipt.inputClaim !== 'released') {
+							await tx
+								.update(syncSessions)
+								.set({ uploadReceipt: { ...receipt, inputClaim: 'released' } })
+								.where(eq(syncSessions.id, sessionId));
 						}
 						return true;
 					},
@@ -317,6 +327,7 @@ export class IngestionService {
 					receipt.inputPath !== initial.inputPath ||
 					receipt.sourceId !== initial.sourceId ||
 					receipt.expectedMailboxes.length !== current.totalMailboxes ||
+					receipt.inputClaim !== 'released' ||
 					!uploadReceiptSuccessful(receipt)
 				) {
 					throw new Error('Upload receipt changed before recording input disposition');
@@ -582,6 +593,7 @@ export class IngestionService {
 				if (!fresh) throw new Error('Ingestion source not found');
 				const originalSource = this.decryptSource(fresh);
 				if (!originalSource) throw new Error('Cannot decrypt current source credentials');
+				let preserveCurrentClaim = false;
 				if (
 					expectedUploadInput !== undefined &&
 					uploadedInputPath(originalSource.credentials) !== expectedUploadInput
@@ -589,11 +601,12 @@ export class IngestionService {
 					throw new Error('Upload input changed before status publication');
 				}
 				if (expectedUploadSessionId !== undefined) {
-					const [session] = await tx
+					const sessions = await tx
 						.select()
 						.from(syncSessions)
-						.where(eq(syncSessions.id, expectedUploadSessionId))
+						.where(eq(syncSessions.ingestionSourceId, id))
 						.for('update');
+					const session = sessions.find((row) => row.id === expectedUploadSessionId);
 					const receipt = readUploadReceipt(session?.uploadReceipt);
 					if (
 						!session ||
@@ -606,6 +619,9 @@ export class IngestionService {
 						receipt.results.length !== receipt.expectedMailboxes.length
 					)
 						throw new Error('Upload receipt changed before status publication');
+					preserveCurrentClaim =
+						receipt.inputClaim !== 'owned' ||
+						hasNewerUploadClaim(session, fresh.lastSyncStartedAt, sessions);
 				}
 				const valuesToUpdate: Partial<typeof ingestionSources.$inferInsert> = { ...rest };
 				const previous = pendingUploadPath(originalSource.credentials);
@@ -655,8 +671,9 @@ export class IngestionService {
 						.map(storagePathLockKey),
 					run: async () => {
 						if (
-							expectedUploadInput !== undefined &&
-							originalSource.status === 'paused'
+							preserveCurrentClaim ||
+							(expectedUploadInput !== undefined &&
+								originalSource.status === 'paused')
 						) {
 							return { updatedSource: fresh, originalSource };
 						}

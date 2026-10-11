@@ -186,11 +186,11 @@ test(
 					uploadInputPath: ctx.inputPath,
 				},
 			});
-		async function zipBytes(broken = false) {
+		async function zipBytes(broken = false, payload = raw) {
 			const zip = archiver('zip');
 			const result = buffer(zip);
-			zip.append(raw, { name: 'valid.eml' });
-			if (broken) zip.append(raw, { name: 'broken.eml' });
+			zip.append(payload, { name: 'valid.eml' });
+			if (broken) zip.append(payload, { name: 'broken.eml' });
 			const [bytes] = await Promise.all([result, zip.finalize()]);
 			if (broken) {
 				const signature = Buffer.from('504b0102', 'hex');
@@ -198,7 +198,7 @@ test(
 				const second = bytes.indexOf(signature, first + 4);
 				assert.ok(second > first && first > 0);
 				assert.equal(bytes.toString('utf8', second + 46, second + 56), 'broken.eml');
-				bytes.writeUInt32LE(raw.length + 1, second + 24);
+				bytes.writeUInt32LE(payload.length + 1, second + 24);
 			}
 			return bytes;
 		}
@@ -800,6 +800,266 @@ test(
 		);
 
 		await t.test(
+			'old successful cleanup retries preserve a new same-key claim without a new session',
+			async (t) => {
+				for (const failure of ['cleanup', 'mark']) {
+					for (const status of ['auth_success', 'importing']) {
+						await t.test(`${failure}: ${status}`, async (t) => {
+							const originalBytes = await zipBytes();
+							const ctx = await setup(
+								['a@example.test'],
+								'eml_import',
+								originalBytes
+							);
+							t.after(async () => {
+								await db
+									.delete(schema.ingestionSources)
+									.where(eq(schema.ingestionSources.id, ctx.source.id));
+							});
+							makeConnector = (source) => new EMLConnector(source.credentials);
+							await worker(ctx, 'a@example.test');
+							const remove = StorageService.prototype.deleteObject;
+							if (failure === 'cleanup')
+								StorageService.prototype.deleteObject = async function (key) {
+									if (key === ctx.inputPath)
+										throw new Error('Synthetic old-claim cleanup failure');
+									return remove.call(this, key);
+								};
+							if (failure === 'mark') {
+								await client`CREATE FUNCTION reject_old_claim_mark() RETURNS trigger LANGUAGE plpgsql AS $$
+								BEGIN IF NEW.upload_receipt->>'disposition' = 'handled' THEN
+									RAISE EXCEPTION 'Synthetic old-claim marking failure'; END IF; RETURN NEW; END $$`;
+								await client`CREATE TRIGGER reject_old_claim_mark BEFORE UPDATE ON sync_sessions
+								FOR EACH ROW EXECUTE FUNCTION reject_old_claim_mark()`;
+							}
+							try {
+								await finishSession(ctx);
+							} finally {
+								StorageService.prototype.deleteObject = remove;
+								if (failure === 'mark') {
+									await client`DROP TRIGGER reject_old_claim_mark ON sync_sessions`;
+									await client`DROP FUNCTION reject_old_claim_mark()`;
+								}
+							}
+							const released = (await sessionRow(ctx.sessionId)).uploadReceipt;
+							assert.equal(
+								(await IngestionService.findById(ctx.source.id)).credentials
+									.uploadedFilePath,
+								undefined
+							);
+							assert.equal(
+								await storage.exists(ctx.inputPath),
+								failure === 'cleanup'
+							);
+							const replacement =
+								failure === 'mark'
+									? await zipBytes(
+											false,
+											Buffer.from(
+												raw
+													.toString()
+													.replace(
+														'Canonical completion',
+														'New same-key claim'
+													)
+											)
+										)
+									: originalBytes;
+							if (failure === 'mark') await storage.put(ctx.inputPath, replacement);
+							const trigger = IngestionService.triggerInitialImport;
+							IngestionService.triggerInitialImport = async () => {};
+							try {
+								await IngestionService.update(ctx.source.id, {
+									status,
+									lastSyncStatusMessage: 'New same-key claim awaiting its master',
+									providerConfig: {
+										type: 'eml_import',
+										uploadedFilePath: ctx.inputPath,
+									},
+								});
+							} finally {
+								IngestionService.triggerInitialImport = trigger;
+							}
+							const sessions = await db
+								.select()
+								.from(schema.syncSessions)
+								.where(eq(schema.syncSessions.ingestionSourceId, ctx.source.id));
+							assert.deepEqual(
+								sessions.map((row) => row.id),
+								[ctx.sessionId]
+							);
+							const before = await sourceRow(ctx.source.id);
+							await finishSession(ctx);
+							assert.deepEqual(
+								await buffer(await storage.get(ctx.inputPath)),
+								replacement
+							);
+							assert.deepEqual(await sourceRow(ctx.source.id), before);
+							assert.equal(await sessionRow(ctx.sessionId), undefined);
+							assert.equal(released.inputClaim, 'released');
+						});
+					}
+				}
+			}
+		);
+
+		await t.test(
+			'failed old finalizers cannot publish status into a newer same-input claim',
+			async (t) => {
+				for (const mode of ['initial', 'continuous']) {
+					for (const created of [false, true]) {
+						await t.test(
+							`${mode}: ${created ? 'new session' : 'before session'}`,
+							async (t) => {
+								const ctx = await setup(
+									['a@example.test'],
+									'eml_import',
+									await zipBytes()
+								);
+								t.after(async () => {
+									await db
+										.delete(schema.ingestionSources)
+										.where(eq(schema.ingestionSources.id, ctx.source.id));
+								});
+								makeConnector = (source) => {
+									const connector = new EMLConnector(source.credentials);
+									connector.fetchEmails = async function* () {
+										throw new Error('Synthetic original read failure');
+									};
+									return connector;
+								};
+								await worker(ctx, 'a@example.test');
+								const old = await sessionRow(ctx.sessionId);
+								assert.equal(old.failedMailboxes, 1);
+								await client`CREATE FUNCTION reject_old_finalization() RETURNS trigger LANGUAGE plpgsql AS $$
+							BEGIN RAISE EXCEPTION 'Synthetic old finalization failure'; END $$`;
+								await client`CREATE TRIGGER reject_old_finalization BEFORE DELETE ON sync_sessions
+							FOR EACH ROW EXECUTE FUNCTION reject_old_finalization()`;
+								try {
+									await finishSession(ctx);
+								} finally {
+									await client`DROP TRIGGER reject_old_finalization ON sync_sessions`;
+									await client`DROP FUNCTION reject_old_finalization()`;
+								}
+								assert.ok(await sessionRow(ctx.sessionId));
+								assert.equal((await sourceRow(ctx.source.id)).status, 'error');
+								let nextId;
+								let before;
+								await pauseBeforePathLocks(
+									ctx.inputPath,
+									() => finishSession(ctx),
+									async () => {
+										const claimed =
+											mode === 'initial'
+												? await IngestionService.claimForImport(
+														ctx.source.id
+													)
+												: await IngestionService.claimForSync(
+														ctx.source.id
+													);
+										assert.ok(claimed);
+										assert.ok(claimed.lastSyncStartedAt > old.createdAt);
+										if (created) {
+											nextId = await SyncSessionService.create(
+												ctx.source.id,
+												1,
+												mode === 'initial',
+												{
+													inputPath: ctx.inputPath,
+													expectedMailboxes: ['a@example.test'],
+												}
+											);
+											// Session identity must also fence a newer claim when timestamps tie.
+											await db
+												.update(schema.ingestionSources)
+												.set({ lastSyncStartedAt: old.createdAt })
+												.where(
+													eq(schema.ingestionSources.id, ctx.source.id)
+												);
+										}
+										before = await sourceRow(ctx.source.id);
+									}
+								);
+								assert.deepEqual(await sourceRow(ctx.source.id), before);
+								assert.equal(await sessionRow(ctx.sessionId), undefined);
+								assert.ok(await storage.exists(ctx.inputPath));
+								if (!nextId)
+									nextId = await SyncSessionService.create(
+										ctx.source.id,
+										1,
+										mode === 'initial',
+										{
+											inputPath: ctx.inputPath,
+											expectedMailboxes: ['a@example.test'],
+										}
+									);
+								makeConnector = (source) => new EMLConnector(source.credentials);
+								const retry = { ...ctx, sessionId: nextId };
+								await worker(retry, 'a@example.test');
+								await finishSession(retry);
+								assert.equal(await storage.exists(ctx.inputPath), false);
+								assert.equal((await sourceRow(ctx.source.id)).status, 'imported');
+							}
+						);
+					}
+				}
+			}
+		);
+
+		await t.test(
+			'credential clearing and claim release commit together before physical cleanup',
+			async () => {
+				const ctx = await setup(['a@example.test']);
+				await success(ctx, 'a@example.test');
+				const before = (await IngestionService.findById(ctx.source.id)).credentials;
+				await client`CREATE FUNCTION reject_claim_release() RETURNS trigger LANGUAGE plpgsql AS $$
+				BEGIN IF NEW.upload_receipt->>'inputClaim' = 'released' THEN
+					RAISE EXCEPTION 'Synthetic claim release failure'; END IF; RETURN NEW; END $$`;
+				await client`CREATE TRIGGER reject_claim_release BEFORE UPDATE ON sync_sessions
+				FOR EACH ROW EXECUTE FUNCTION reject_claim_release()`;
+				try {
+					await finishSession(ctx);
+					assert.deepEqual(
+						(await IngestionService.findById(ctx.source.id)).credentials,
+						before
+					);
+					assert.equal(
+						(await sessionRow(ctx.sessionId)).uploadReceipt.inputClaim,
+						'owned'
+					);
+					assert.deepEqual(await buffer(await storage.get(ctx.inputPath)), raw);
+				} finally {
+					await client`DROP TRIGGER reject_claim_release ON sync_sessions`;
+					await client`DROP FUNCTION reject_claim_release()`;
+				}
+				await finishSession(ctx);
+				assert.equal(await storage.exists(ctx.inputPath), false);
+				assert.equal(await sessionRow(ctx.sessionId), undefined);
+			}
+		);
+
+		await t.test(
+			'legacy missing claim phase is not permission to release current input',
+			async () => {
+				const ctx = await setup(['a@example.test']);
+				await success(ctx, 'a@example.test');
+				const receipt = { ...(await sessionRow(ctx.sessionId)).uploadReceipt };
+				delete receipt.inputClaim;
+				await db
+					.update(schema.syncSessions)
+					.set({ uploadReceipt: receipt })
+					.where(eq(schema.syncSessions.id, ctx.sessionId));
+				const before = await sourceRow(ctx.source.id);
+				await finishSession(ctx);
+				assert.deepEqual(await sourceRow(ctx.source.id), before);
+				assert.ok(await sessionRow(ctx.sessionId));
+				assert.deepEqual(await buffer(await storage.get(ctx.inputPath)), raw);
+				await IngestionService.delete(ctx.source.id, { id: randomUUID() }, 'fixture');
+				assert.equal(await storage.exists(ctx.inputPath), false);
+			}
+		);
+
+		await t.test(
 			'cleanup and receipt-marking failures retain provenance for finalizer retry',
 			async () => {
 				for (const failure of ['cleanup', 'mark']) {
@@ -1213,6 +1473,12 @@ test(
 				assert.equal(await IngestionService.releaseCompletedUpload(ctx.sessionId), false);
 				await success({ ...ctx, sessionId: other }, 'b@example.test');
 				assert.equal(await IngestionService.releaseCompletedUpload(ctx.sessionId), true);
+				assert.ok(await storage.exists(ctx.inputPath));
+				assert.equal(
+					(await IngestionService.findById(ctx.source.id)).credentials.uploadedFilePath,
+					ctx.inputPath
+				);
+				assert.equal(await IngestionService.releaseCompletedUpload(other), true);
 				assert.equal(await storage.exists(ctx.inputPath), false);
 			}
 		);

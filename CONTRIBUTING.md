@@ -228,6 +228,13 @@ Only the replacement's complete canonical successes permit release. Keyed upload
 both successful and failed terminal job records so the stale-session sweep can retry the same ID after
 cleanup or receipt-marking failure.
 
+Each new receipt explicitly owns its original credential claim. Releasing that claim and clearing
+matching credentials commit atomically before physical cleanup. Later cleanup retries never clear
+credentials again: any same-key reselection, including an `auth_success` claim with no new session,
+remains a live reference. Missing claim-phase metadata is not release proof. Finalizer status,
+message and timestamp updates also recheck the source's claim start time and session identity under
+the lock, so an older failed receipt may retire without overwriting a newer same-input retry.
+
 POSIX single-letter colon names such as `a:report.eml` and `a:folder` remain literal relative paths
 through ZIP validation, source-path composition and local storage. Windows-only colon checks still
 reject drive and alternate-stream forms; traversal, absolute-path and symlink checks are unchanged.

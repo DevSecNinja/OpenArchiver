@@ -101,6 +101,7 @@ export class SyncSessionService {
 				sourceId: ingestionSourceId,
 				inputPath: upload.inputPath,
 				discoveryClosed: true,
+				inputClaim: 'owned',
 				expectedMailboxes,
 				results: [],
 			});
@@ -356,6 +357,7 @@ export class SyncSessionService {
 				!session ||
 				!receipt ||
 				receipt.dispatchAborted ||
+				receipt.inputClaim !== 'owned' ||
 				!identity ||
 				receipt.sourceId !== session.ingestionSourceId ||
 				receipt.expectedMailboxes.length !== session.totalMailboxes ||
@@ -423,6 +425,7 @@ export class SyncSessionService {
 		if (
 			!receipt ||
 			receipt.dispatchAborted ||
+			receipt.inputClaim !== 'owned' ||
 			receipt.sourceId !== session.ingestionSourceId ||
 			receipt.expectedMailboxes.length !== session.totalMailboxes ||
 			identity.sourceId !== receipt.sourceId ||
@@ -442,6 +445,7 @@ export class SyncSessionService {
 		finalizable?: boolean;
 		failedMailboxes?: number;
 		dispositionHandled?: boolean;
+		inputClaimReleased?: boolean;
 	}> {
 		const [session] = await db
 			.select()
@@ -489,6 +493,7 @@ export class SyncSessionService {
 				failedMailboxes: receipt?.results.filter((result) => result.outcome !== 'success')
 					.length,
 				dispositionHandled: receipt?.disposition === 'handled',
+				inputClaimReleased: receipt?.inputClaim === 'released',
 			};
 		}
 		return {
