@@ -61,6 +61,7 @@ import { checkDeletionEnabled } from '../helpers/deletionGuard';
 import { normalizeEmailAddress } from '../helpers/emailAddress';
 import { mapWithConcurrency } from '../helpers/mapWithConcurrency';
 import { truncateToBytes } from '../helpers/truncateToBytes';
+import { assertSafeRelativePath } from '../helpers/relativePath';
 import { quoteMeiliString } from '../helpers/meiliFilter';
 import { isIndexingWorkerAlive } from '../jobs/helpers/workerLiveness';
 import { buildReindexWhere } from '../jobs/helpers/indexBacklog';
@@ -1574,6 +1575,9 @@ export class IngestionService {
 		// counts as the same mailbox, whatever casing or padding the provider sent.
 		const userEmail = normalizeEmailAddress(rawUserEmail);
 		try {
+			if (email.path !== undefined && email.path !== '') {
+				assertSafeRelativePath(email.path);
+			}
 			// Read the raw bytes from the temp file written by the connector
 			const rawEmlBuffer = await readFile(email.tempFilePath);
 
