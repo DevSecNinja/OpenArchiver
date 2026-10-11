@@ -195,6 +195,11 @@ dot/space aliases are rejected because they do not identify ordinary literal fil
 names remain supported. Unsafe ZIP names abort the import explicitly; previously processed entries
 are not rolled back.
 
+Windows also rejects exact `CONIN$` and `CONOUT$` path segments, case-insensitively, as documented
+[console aliases](https://learn.microsoft.com/windows/win32/api/fileapi/nf-fileapi-createfilew#remarks).
+This exact-name rule does not reject extension forms such as `CONIN$.txt`; existing trailing-dot/space
+and classic device-name rules still apply. POSIX keeps these names literal.
+
 Local storage applies the same constraints to `put`, `get`, `delete`, `deleteObject`, and `exists`, including each
 NFC/NFD lookup candidate, and refuses symlink components below the configured root. Existing archives
 using such links must be migrated to ordinary directories/files. The configured root and its ancestors
