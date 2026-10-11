@@ -1,38 +1,65 @@
-# sv
+# Open Archiver frontend
 
-Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
+Use the Node and pnpm versions declared in the root `package.json`. Install from
+the repository root with `pnpm install --frozen-lockfile`, then run
+`pnpm --filter @open-archiver/frontend dev`. Development uses Vite's proxy;
+production uses the compiled SvelteKit API route and Node adapter instead.
 
-## Creating a project
+## Building and checking
 
-If you're seeing this, you've probably already done this step. Congrats!
+From the repository root:
 
-```bash
-# create a new project in the current directory
-npx sv create
-
-# create a new project in my-app
-npx sv create my-app
+```sh
+pnpm --filter @open-archiver/frontend check
+pnpm build:oss
 ```
 
-## Developing
+Framework updates require a fresh source build. Installing a newer SvelteKit
+beside an old `build/` directory does not replace framework code embedded in the
+compiled output. Use a clean checkout without `node_modules`, `.svelte-kit`,
+`build`, `dist`, or `*.tsbuildinfo` from a previous build.
 
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
+## Production adapter regression
 
-```bash
-npm run dev
+The regression runs the actual `build/index.js`, not Vite or a reimplementation
+of the frontend. Run it in an isolated container with **no host ports published**
+and **no external network**. From a clean checkout, build the existing OSS build
+stage and run:
 
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
+```sh
+podman build --target build -f apps/open-archiver/Dockerfile -t localhost/openarchiver-frontend-test .
+podman run --rm --network none --read-only --tmpfs /tmp \
+  --workdir /app/packages/frontend \
+  localhost/openarchiver-frontend-test node --test tests/production.test.mjs
 ```
 
-## Building
+The equivalent package command is
+`pnpm --filter @open-archiver/frontend test:production`. It requires an existing
+source build and the same isolation; it does not install packages or rebuild.
+Remove the task-owned image after use.
 
-To create a production version of your app:
+The read-only OSS validation workflow also runs the frontend type check and
+these regressions after `pnpm build:oss`. It mounts the already-built checkout
+read-only in a Node 22 container with networking disabled and no published ports;
+it does not rebuild or install packages inside the test container.
+`tests/Dockerfile` pins that runner image by digest and keeps it discoverable by
+Renovate's existing Dockerfile manager.
 
-```bash
-npm run build
-```
+The test starts its own frontend on loopback port 3000 and a synthetic HTTP API
+on port 4000 in the same network namespace, preserving the production
+`localhost:4000` contract. It does not start the real backend or require SQLite,
+a mailbox, a database, cloud credentials, or a real JWT secret.
+The frontend's unrelated GitHub release lookup receives a synthetic 404 through
+a test-only preload; other external fetches fail explicitly.
 
-You can preview the production build with `npm run preview`.
+Coverage includes configured `ORIGIN` and trusted reverse-proxy origin headers,
+setup/sign-in rendering and synthetic login responses, production auth-cookie
+handling, authorization/query/body forwarding, same-origin multipart uploads,
+wrong/missing-origin rejection before forwarding, the SAML callback exception,
+body-size boundaries (including chunked requests), and API error responses.
 
-> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
+This verifies frontend transport and session handling only. The mock does not
+prove backend authorization, password validation, archive parsing, or browser
+interaction. Full application end-to-end testing and scanning the final
+production image are separate checks; build-stage success is not evidence that
+the production image has all its runtime dependencies.
