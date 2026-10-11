@@ -438,15 +438,11 @@ export class SyncSessionService {
 					'message' in result && typeof result.message === 'string'
 						? result.message.replace(/[\r\n\0]+/g, ' ').trim()
 						: '';
-				notes.push(
-					truncateToBytes(
-						`${mailbox}: ${diagnostic || 'upload mailbox did not complete successfully'}`.replace(
-							/[\r\n\0]+/g,
-							' '
-						),
-						1024
-					)
-				);
+				const prefix = `${mailbox.replace(/[\r\n\0]+/g, ' ')}:`;
+				const note = diagnostic.toLowerCase().startsWith(prefix)
+					? diagnostic
+					: `${prefix} ${diagnostic || 'upload mailbox did not complete successfully'}`;
+				notes.push(truncateToBytes(note, 1024));
 			}
 			await tx
 				.update(syncSessions)

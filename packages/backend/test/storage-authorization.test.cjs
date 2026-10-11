@@ -66,7 +66,7 @@ test(
 
 		// Keep the real driver, schema, IAM, CASL and SQL filters; replace only the connection.
 		provideModule('../dist/database/index.js', { db });
-		// These unrelated import graphs start queues/providers (including native SQLite).
+		// These unrelated import graphs start queues/providers or require encryption config.
 		for (const name of [
 			'StorageService',
 			'SearchService',

@@ -340,6 +340,66 @@ test(
 		);
 
 		await t.test(
+			'worker-shaped diagnostics retain only their own canonical mailbox prefix',
+			async () => {
+				for (const [mailbox, message, expected] of [
+					[
+						'a@example.test',
+						'a@example.test: 2 of 3 messages failed to archive',
+						'a@example.test: 2 of 3 messages failed to archive',
+					],
+					[
+						'a@example.test',
+						'A@EXAMPLE.TEST: storage write failed',
+						'A@EXAMPLE.TEST: storage write failed',
+					],
+					[
+						'a@example.test',
+						'Storage write failed',
+						'a@example.test: Storage write failed',
+					],
+					[
+						'a@example.test',
+						'b@example.test: parser failed',
+						'a@example.test: b@example.test: parser failed',
+					],
+					[
+						'a@example.test',
+						'a@example.test.other: parser failed',
+						'a@example.test: a@example.test.other: parser failed',
+					],
+					[
+						'a\r\nb@example.test',
+						'A\r\nB@EXAMPLE.TEST:\0 parser failed',
+						'A B@EXAMPLE.TEST:  parser failed',
+					],
+					[
+						'a@example.test',
+						`a@example.test: ${'\u{1f4e7}'.repeat(600)}`,
+						truncateToBytes(`a@example.test: ${'\u{1f4e7}'.repeat(600)}`, 1024),
+					],
+				]) {
+					const ctx = await session([mailbox]);
+					await record(ctx, mailbox, message);
+					await record(
+						ctx,
+						mailbox,
+						'Duplicate must not replace the original diagnostic'
+					);
+					const state = await rowFor(ctx);
+					assert.deepEqual(state.errorMessages, [expected]);
+					assert.ok(Buffer.byteLength(state.errorMessages[0], 'utf8') <= 1024);
+					assert.equal(state.uploadReceipt.results[0].mailbox, mailbox);
+					await finalize(ctx);
+					assert.equal(
+						(await sourceRows([ctx.sourceId]))[0].lastSyncStatusMessage,
+						`Sync cycle completed with 1 error(s):\n${expected}`
+					);
+				}
+			}
+		);
+
+		await t.test(
 			'only absent or blank messages use generic fallback and redundant failure cannot spoil success',
 			async () => {
 				const ctx = await session(['a@example.test', 'b@example.test']);
