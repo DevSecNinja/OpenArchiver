@@ -113,10 +113,25 @@ Retrieves a file from the specified path as a readable stream.
 
 ### `delete(path)`
 
-Deletes a file from the storage backend.
+Deletes from the storage backend. The S3 provider retains its existing **key-prefix** contract:
+all current objects whose keys start with `path` are selected, not just an exact key. Choose prefixes
+carefully; the provider does not add a path separator or broaden/narrow the caller's prefix.
 
-- **`path: string`**: The unique identifier of the file to delete.
-- **Returns**: `Promise<void>` - A promise that resolves when the file is deleted. If the file does not exist, the promise will still resolve successfully without throwing an error.
+- **`path: string`**: The file identifier for local storage, or key prefix for S3.
+- **Returns**: `Promise<void>` - Resolves when deletion succeeds, or when no matching objects exist.
+- **S3 pagination**: Lists and deletes at most 1,000 objects per batch, following continuation tokens.
+  Missing or repeated continuation tokens and malformed object listings fail explicitly.
+- **S3 partial failures**: Request failures and per-object errors inside an HTTP 200 response reject
+  the operation. Some earlier objects may already have been deleted; this is not a transaction.
+  Fix the underlying permission/retention problem before retrying.
+
+This removes current objects only. It does not purge versioned-bucket history or override object-lock,
+retention, or lifecycle policies. Synthetic local HTTP protocol tests cover pagination and deletion
+errors; they are not proof of compatibility with a live S3 service.
+
+After building the OSS workspace, run the deletion regressions with
+`node --test packages/backend/test/s3-delete.test.mjs`. They use the compiled provider and actual AWS
+SDK against a loopback HTTP fixture with synthetic credentials, without contacting a real bucket.
 
 ---
 
