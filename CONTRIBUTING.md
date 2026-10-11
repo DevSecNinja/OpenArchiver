@@ -146,6 +146,68 @@ storage, indexing, deduplication, and matching database/archive restore evidence
 Preserve-original mode intentionally stores attachments inside the raw EML without separate
 attachment rows. No PST import coverage is implied by these synthetic EML/ZIP fixtures.
 
+### Mail-composer and IMAP dependency regressions
+
+The backend pins Nodemailer 10.0.14 and ImapFlow 2.3.0 for
+[issue #124](https://github.com/DevSecNinja/OpenArchiver/issues/124). Their registry publication
+times are `2026-10-03T13:45:29.976Z` and `2026-10-08T14:12:31.660Z`, respectively.
+Both met pnpm's unchanged 1440-minute (24-hour) installation floor during validation:
+`pnpm-workspace.yaml` sets `minimumReleaseAgeStrict: true` without an explicit duration.
+Separately, `renovate.json` sets `"minimumReleaseAge": "3 days"`, the repository's 72-hour
+adoption gate. Nodemailer met both thresholds; ImapFlow did not yet meet the adoption gate
+during the morning validation on 2026-10-11. It reached 72 elapsed hours at
+`2026-10-11T14:12:31.660Z` (16:12:31.660 CEST), not at a calendar-day boundary.
+At resumption on `2026-10-11T16:01:51.183Z`, all 26 resolved packages in the two updated
+parents' dependency closure met 72 hours, including all seven newly added lockfile resolutions.
+Their registry integrity values matched the lockfile; no dependency or test bytes changed.
+The morning test results remain historical evidence, not a new execution after the age gate.
+Successful installation or age eligibility alone is not adoption or publication approval.
+At selection before 07:00 UTC, Nodemailer 10.1.0 and ImapFlow 2.4.0 were still inside
+pnpm's one-day floor. These are intentionally exact parent versions, not overrides or
+release-age exceptions.
+
+Nodemailer 10.0.14 contains the address-list accumulation fix
+[GHSA-2x7j-588g-ccc2](https://github.com/advisories/GHSA-2x7j-588g-ccc2) (fixed in 9.1.0)
+and free-text fallback fix
+[GHSA-v53p-9fqp-m79j](https://github.com/advisories/GHSA-v53p-9fqp-m79j) (fixed in 10.0.6).
+The direct dependency and mailparser now resolve to the same fixed copy.
+
+ImapFlow 1.0.191 imported its separate Nodemailer 7.0.5 copy only from
+`lib/proxy-connection.js`, for the HTTP/HTTPS CONNECT proxy client. ImapConnector supplies no
+proxy option; its LIST/FETCH envelope parsing is not the Nodemailer address-parser path.
+ImapFlow 2.3.0 removes that dependency through a supported parent update. Its v2 migration
+requires Node.js 20+ and publishes CJS/ESM through an export map; our Node.js 22 build uses the
+package-root API and needs no connector or declaration shim. Package presence alone did not
+establish SMTP, OAuth/TLS, raw-option SSRF, or address-parser exploitation through ImapFlow.
+
+After a frozen install and OSS build, run:
+
+```sh
+pnpm --filter @open-archiver/backend exec node --test --test-concurrency=1 --test-timeout=30000 test/mail-composer.test.cjs
+```
+
+This suite is also discovered by `pnpm test:oss`. It runs the real compiled
+`stripAttachmentsFromEml` with 4/8/16/32 recipients and messages smaller than 4 KiB. In-memory
+counters precede the original installed accumulator operation, and a delegating `compile`
+hook isolates composer work from mailparser's initial parse. Neither the helper nor dependency
+files are rewritten. The linear-work assertion fails on 8.0.2 with 10/36/136/528 logical element
+copies and passes on 10.0.14 with 4/8/16/32 appends; repeated runs must agree. This is not a
+timed denial-of-service, CPU-instruction measurement, or free-text fallback reproduction.
+
+Additional checks preserve ordinary/encoded From, To, Cc and Reply-To, threading/custom headers,
+text/HTML, inline bytes and the byte-identical no-attachment/inline-only shortcuts. An isolated,
+unmodified compiled IngestionService runs both preservation branches with real encrypted local
+storage and retrieval, but synthetic database results and inert eager infrastructure. It checks
+separate attachment bytes/links in default mode and original MIME with no separate attachment
+rows or composer call in preserve-original mode. It does not cover database deduplication,
+collisions, retries, indexing, or the separate filename/retry repair.
+
+The IMAP check constructs the actual client and parses synthetic source through the compiled
+connector in both modes without connecting. Real mailbox LIST/FETCH, authentication, TLS,
+proxies and server interoperability remain unverified. Keep the full source/test results and
+resolved dependency advisory inventory separate from native SQLite, full-runtime and image
+scan evidence; this change does not approve deployment or claim a zero-vulnerability artifact.
+
 ### Archive path constraints
 
 ZIP entry names and connector folder paths must be relative, slash-separated paths without empty,
