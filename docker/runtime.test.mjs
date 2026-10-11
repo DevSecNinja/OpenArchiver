@@ -153,7 +153,7 @@ setInterval(() => {}, 1000);`
 		);
 		const concurrently = path.resolve(
 			path.dirname(require.resolve('concurrently/package.json')),
-			'dist/bin/concurrently.js'
+			require('concurrently/package.json').bin.concurrently
 		);
 		const child = spawn(
 			process.execPath,
