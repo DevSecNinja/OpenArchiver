@@ -202,23 +202,22 @@ separate attachment bytes/links in default mode and original MIME with no separa
 rows or composer call in preserve-original mode. It does not cover database deduplication,
 collisions, retries, indexing, or the separate filename/retry repair.
 
-The IMAP check constructs the actual client and parses synthetic source through the compiled
-connector in both modes without connecting. Real mailbox LIST/FETCH, authentication, TLS,
-proxies and server interoperability remain unverified. Keep the full source/test results and
-resolved dependency advisory inventory separate from native SQLite, full-runtime and image
+The offline IMAP check constructs the actual client and parses synthetic source through the
+compiled connector in both modes without connecting. The separate Dovecot fixture below adds
+one-server protocol coverage, not live-provider, OAuth or proxy validation. Keep source/test
+results and resolved dependency advisory inventory separate from native SQLite, full-runtime and image
 scan evidence; this change does not approve deployment or claim a zero-vulnerability artifact.
 
 #### Opt-in Dovecot interoperability fixture
 
 `packages/backend/test/integration/run-imap-interop.sh` is an opt-in real-server
-fixture. Its source is prepared separately from the already validated composer regressions;
-runtime results must be recorded before treating it as interoperability evidence.
+fixture, run separately from the composer regressions. A source build alone is not
+interoperability evidence; the dated hosted result is recorded below.
 The first local preparation stopped before dependency installation because effective kernel
 resource limits could not be verified. No local interoperability success is claimed.
 The OSS workflow therefore includes one bounded hosted-Linux step that reuses its existing
-compiled build and runs the fixture explicitly; this initial CI wiring is not itself a
-runtime-validation result. The first hosted attempt on `079b15ad` verified the kernel limits
-but failed before protocol testing: the standard Dovecot image's `imap-login` and `anvil`
+compiled build and runs the fixture explicitly. The first hosted attempt on `079b15ad` verified
+the kernel limits but failed before protocol testing: the standard Dovecot image's `imap-login` and `anvil`
 file capabilities caused `execv` to fail with `EPERM` under the required restrictions.
 It requires a prebuilt Linux amd64 workspace, Docker or Podman with effective cgroup-v2
 limits, and existing Bash and `timeout` tools. Certificate generation uses the existing
@@ -245,7 +244,7 @@ Fixture configuration uses the documented `vmail` users, unprivileged ports and 
 login mode. The runner checks actual UID/GID, zero effective capabilities and
 `NoNewPrivs=1`, plus absence of file capabilities on `imap-login`/`anvil`, before protocol
 testing. It does not add capabilities, alter executable xattrs, copy binaries or build an
-image. This variant remains runtime-unvalidated until a successful hosted result is recorded.
+image.
 
 Each run generates an owned, short-lived CA and server certificate with localhost/IP SANs
 in a network-disabled, capped certificate helper that exits and is removed before the server
@@ -268,6 +267,26 @@ cases must reject and close. Messages and credentials are synthetic; no OAuth, p
 provider account, real ingestion database or production archive is involved. Ordinary
 `pnpm test:oss` discovery skips this test unless the isolated runner opts in. Passing one
 Dovecot fixture is not multi-provider, full-ingestion, concurrency or deployment clearance.
+
+On 2026-10-11, [hosted run 38158044423](https://github.com/DevSecNinja/OpenArchiver/actions/runs/38158044423)
+on `b77c70375d4b0abcf9c03b1ff4f390d0f34e7563` passed all nine tests (eight subcases and their
+parent), with zero failures, skips or cancellations. Both TLS transports and preservation
+modes passed the full positive cases, including raw MIME/hash, parsed HTML/data-URI decoded
+bytes, attachments, cursor resume and early-return/logout checks. Wrong-password and
+untrusted-CA rejection/cleanup passed for both transports. The run verified the effective
+resource, UID/GID, zero-capability, no-new-privileges, no-file-capability and network controls
+before protocol testing.
+
+The earlier failures remain distinct evidence: `079b15ad` failed at executable file
+capabilities, `31c9567b` at missing test-only storage bootstrap configuration, and `6d56ed34`
+at an incorrect CID-only expectation for parsed HTML. The pinned parser converts CID links
+to data URIs by default while the fetched raw MIME remains byte-identical. These fixture
+issues were corrected without relaxing safety controls or removing coverage; none was
+waived. The same successful workflow passed 51 backend tests (with the opt-in test skipped
+in ordinary discovery and then run explicitly), all 16 production frontend tests, and
+frontend checking with zero errors and 44 existing warnings. This does not establish real
+ingestion database concurrency, provider interoperability, native SQLite, restoration or
+production-image safety.
 
 ### Archive path constraints
 
