@@ -6,6 +6,7 @@ const path = require('node:path');
 const Module = require('node:module');
 const { buffer } = require('node:stream/consumers');
 const { test } = require('node:test');
+const { setTimeout: delay } = require('node:timers/promises');
 const postgres = require('postgres');
 const { drizzle } = require('drizzle-orm/postgres-js');
 const { migrate } = require('drizzle-orm/postgres-js/migrator');
@@ -108,7 +109,8 @@ test(
 				else delete require.cache[filename];
 			});
 		}
-		provideModule('../dist/database/index.js', { db });
+		const databaseModule = { db };
+		provideModule('../dist/database/index.js', databaseModule);
 		const unavailable = new Proxy(
 			{},
 			{ get: () => assert.fail('Unrelated queue/provider orchestration must not run') }
@@ -124,17 +126,31 @@ test(
 		const { IngestionService } = require('../dist/services/IngestionService');
 		const { EMLConnector } = require('../dist/services/ingestion-connectors/EMLConnector');
 		const { StorageService } = require('../dist/services/StorageService');
+		const { CryptoService } = require('../dist/services/CryptoService');
 		const { stripAttachmentsFromEml } = require('../dist/helpers/emlUtils');
 		const storage = new StorageService();
 		const service = new IngestionService();
-		const createSource = async (preserveOriginalFile = false) => {
+		const createSource = async (preserveOriginalFile = false, mergedIntoId) => {
 			const [source] = await db
 				.insert(schema.ingestionSources)
-				.values({ name: 'Synthetic retry', provider: 'eml_import', preserveOriginalFile })
+				.values({
+					name: 'Synthetic retry',
+					provider: 'eml_import',
+					preserveOriginalFile,
+					mergedIntoId,
+					credentials: CryptoService.encryptObject({ type: 'eml_import' }),
+				})
 				.returning();
 			return source;
 		};
-		async function ingest(source, raw) {
+		async function ingest(
+			source,
+			raw,
+			mailbox = 'fixture@example.test',
+			ingestionService = service,
+			storageService = storage,
+			providerId
+		) {
 			const zip = archiver('zip');
 			const result = buffer(zip);
 			const name = 'reports:Q4/trailing. /message.eml';
@@ -151,18 +167,20 @@ test(
 				replacements++;
 			}
 			assert.equal(replacements, 2);
-			const zipPath = path.join(fixture, 'mail.zip');
+			const zipPath = path.join(fixture, `${randomUUID()}.zip`);
 			await fs.writeFile(zipPath, bytes);
 			const connector = new EMLConnector(
 				{ localFilePath: zipPath },
 				{ preserveOriginalFile: source.preserveOriginalFile }
 			);
 			const results = [];
-			for await (const email of connector.fetchEmails('fixture@example.test')) {
+			for await (const email of connector.fetchEmails(mailbox)) {
+				if (providerId) email.id = providerId;
 				results.push(
-					await service.processEmail(email, source, storage, 'fixture@example.test')
+					await ingestionService.processEmail(email, source, storageService, mailbox)
 				);
 			}
+			await fs.rm(zipPath);
 			assert.equal(results.length, 1);
 			return results[0];
 		}
@@ -248,7 +266,7 @@ test(
 					assert.equal(failed.error, true);
 					assert.match(failed.message, /Synthetic temporary attachment failure/);
 					assert.equal((await emails(source)).length, 0);
-					assert.equal((await attachments(source)).length, names.length - 1);
+					assert.equal((await attachments(source)).length, 0);
 				} finally {
 					storage.put = originalPut;
 				}
@@ -289,13 +307,259 @@ test(
 				try {
 					assert.equal((await ingest(source, raw)).error, true);
 					assert.equal((await emails(source)).length, 0);
-					assert.equal((await attachments(source)).length, names.length);
+					assert.equal((await attachments(source)).length, 0);
 				} finally {
 					await client`DROP TRIGGER reject_fixture_link ON email_attachments`;
 					await client`DROP FUNCTION reject_fixture_link()`;
 				}
 				assert.ok((await ingest(source, raw)).archivedEmailId);
 				await verifyComplete(source, raw);
+			}
+		);
+
+		await t.test('shared-reference link failure rolls back the new mailbox row', async () => {
+			const source = await createSource();
+			const raw = message('shared-link-failure');
+			const full = await ingest(source, raw, 'first@example.test');
+			assert.ok(full.archivedEmailId);
+			const initial = await emails(source);
+			const files = await attachments(source);
+			const referenceService = new IngestionService();
+			await client`CREATE FUNCTION reject_reference_link() RETURNS trigger LANGUAGE plpgsql
+				AS $$ BEGIN RAISE EXCEPTION 'synthetic reference link failure'; END $$`;
+			await client`CREATE TRIGGER reject_reference_link BEFORE INSERT ON email_attachments
+				FOR EACH ROW EXECUTE FUNCTION reject_reference_link()`;
+			try {
+				const failed = await ingest(source, raw, 'second@example.test', referenceService);
+				assert.equal(failed.error, true);
+				assert.deepEqual(await emails(source), initial);
+				assert.deepEqual(await attachments(source), files);
+			} finally {
+				await client`DROP TRIGGER reject_reference_link ON email_attachments`;
+				await client`DROP FUNCTION reject_reference_link()`;
+			}
+			const reference = await ingest(source, raw, 'second@example.test', referenceService);
+			assert.ok(reference.archivedEmailId);
+			const rows = await emails(source);
+			assert.equal(rows.length, 2);
+			assert.equal(new Set(rows.map((row) => row.storagePath)).size, 1);
+			for (const row of rows) {
+				const links = await db
+					.select()
+					.from(schema.emailAttachments)
+					.where(eq(schema.emailAttachments.emailId, row.id));
+				assert.deepEqual(
+					links.map((link) => link.attachmentId).sort(),
+					files.map((file) => file.id).sort()
+				);
+				const bytes = await buffer(await storage.get(row.storagePath));
+				assert.equal(
+					createHash('sha256').update(bytes).digest('hex'),
+					row.storageHashSha256
+				);
+			}
+			assert.equal(
+				await ingest(source, raw, ' SECOND@example.test ', new IngestionService()),
+				null
+			);
+		});
+
+		await t.test(
+			'independent mailbox jobs serialize one full email and one reference without blocking unrelated keys',
+			async () => {
+				for (const preserve of [false, true]) {
+					const source = await createSource(preserve);
+					const child = await createSource(preserve, source.id);
+					const raw = message(`concurrent-${preserve}`);
+					let release;
+					const paused = new Promise((resolve) => {
+						release = resolve;
+					});
+					let started;
+					const writing = new Promise((resolve) => {
+						started = resolve;
+					});
+					const firstStorage = new StorageService();
+					const originalPut = firstStorage.put.bind(firstStorage);
+					firstStorage.put = async (key, bytes, options) => {
+						await originalPut(key, bytes, options);
+						if (key.includes('/emails/')) {
+							started();
+							await paused;
+						}
+					};
+					const secondStorage = new StorageService();
+					let secondWrites = 0;
+					secondStorage.put = async () => {
+						secondWrites++;
+						assert.fail('Shared reference must not store content');
+					};
+					const first = ingest(
+						source,
+						raw,
+						'first@example.test',
+						new IngestionService(),
+						firstStorage
+					);
+					let second;
+					try {
+						await writing;
+						second = ingest(
+							child,
+							raw,
+							'second@example.test',
+							new IngestionService(),
+							secondStorage
+						);
+						const deadline = Date.now() + 5000;
+						let blocked = false;
+						while (Date.now() < deadline) {
+							const [state] =
+								await admin`SELECT count(*)::int AS waiting FROM pg_stat_activity
+							WHERE datname = ${databaseName} AND wait_event = 'advisory'`;
+							if (state.waiting > 0) {
+								blocked = true;
+								break;
+							}
+							await delay(10);
+						}
+						assert.equal(blocked, true, 'Second job must wait on the PostgreSQL lock');
+						assert.equal(
+							(await emails(source)).length,
+							0,
+							'No partial row is published'
+						);
+						const unrelated = Buffer.from(
+							`Message-ID: <independent-${preserve}@example.test>\r\nSubject: independent\r\n\r\nOther message.`
+						);
+						assert.ok(
+							(
+								await ingest(
+									source,
+									unrelated,
+									'third@example.test',
+									new IngestionService()
+								)
+							).archivedEmailId
+						);
+						const independentSource = await createSource(preserve);
+						assert.ok(
+							(
+								await ingest(
+									independentSource,
+									raw,
+									'first@example.test',
+									new IngestionService()
+								)
+							).archivedEmailId
+						);
+					} finally {
+						release();
+						await Promise.allSettled([first, ...(second ? [second] : [])]);
+					}
+					assert.ok((await first).archivedEmailId);
+					assert.ok((await second).archivedEmailId);
+					assert.equal(secondWrites, 0);
+					const allRows = await emails(source);
+					assert.equal(allRows.length, 3);
+					const pair = allRows.filter((row) => row.userEmail !== 'third@example.test');
+					assert.equal(new Set(pair.map((row) => row.storagePath)).size, 1);
+					const files = await attachments(source);
+					assert.equal(files.length, preserve ? 0 : names.length);
+					for (const row of pair) {
+						const bytes = await buffer(await storage.get(row.storagePath));
+						assert.equal(
+							createHash('sha256').update(bytes).digest('hex'),
+							row.storageHashSha256
+						);
+						assert.equal(bytes.length, row.sizeBytes);
+						if (preserve) assert.deepEqual(bytes, raw);
+						const links = await db
+							.select()
+							.from(schema.emailAttachments)
+							.where(eq(schema.emailAttachments.emailId, row.id));
+						assert.deepEqual(
+							links.map((link) => link.attachmentId).sort(),
+							files.map((file) => file.id).sort()
+						);
+					}
+					const rootFiles = await fs.readdir(
+						path.join(process.env.STORAGE_LOCAL_ROOT_PATH, 'open-archiver', source.id),
+						{ recursive: true }
+					);
+					assert.equal(rootFiles.filter((file) => file.endsWith('.eml')).length, 2);
+					assert.equal(
+						await ingest(source, raw, 'first@example.test', new IngestionService()),
+						null
+					);
+				}
+			}
+		);
+
+		await t.test(
+			'headerless preserve-mode byte deduplication spans different provider IDs and mailboxes',
+			async () => {
+				const source = await createSource(true);
+				const raw = message('unused')
+					.toString()
+					.replace(/^Message-ID:.*\r\n/m, '');
+				const results = await Promise.all(
+					['one', 'two', 'three'].map((id, index) =>
+						ingest(
+							source,
+							Buffer.from(raw),
+							index < 2 ? 'same@example.test' : 'other@example.test',
+							new IngestionService(),
+							new StorageService(),
+							id
+						)
+					)
+				);
+				assert.equal(results.filter((result) => result === null).length, 1);
+				assert.equal(results.filter((result) => result?.archivedEmailId).length, 2);
+				const rows = await emails(source);
+				assert.equal(rows.length, 2);
+				assert.equal(new Set(rows.map((row) => row.storagePath)).size, 1);
+				assert.equal((await attachments(source)).length, 0);
+				for (const row of rows) {
+					const bytes = await buffer(await storage.get(row.storagePath));
+					assert.deepEqual(bytes, Buffer.from(raw));
+					assert.equal(
+						createHash('sha256').update(bytes).digest('hex'),
+						row.storageHashSha256
+					);
+					assert.equal(bytes.length, row.sizeBytes);
+				}
+			}
+		);
+
+		await t.test(
+			'one-connection pools do not re-enter the pool during full/reference publication',
+			{ timeout: 10_000 },
+			async () => {
+				const source = await createSource();
+				const raw = message('single-connection');
+				const single = postgres(url.toString(), { max: 1, connect_timeout: 5 });
+				databaseModule.db = drizzle(single, { schema });
+				try {
+					assert.ok(
+						(await ingest(source, raw, 'first@example.test', new IngestionService()))
+							.archivedEmailId
+					);
+					assert.ok(
+						(await ingest(source, raw, 'second@example.test', new IngestionService()))
+							.archivedEmailId
+					);
+					assert.equal(
+						await ingest(source, raw, 'second@example.test', new IngestionService()),
+						null
+					);
+					assert.equal((await emails(source)).length, 2);
+					assert.equal((await attachments(source)).length, names.length);
+				} finally {
+					databaseModule.db = db;
+					await single.end({ timeout: 5 });
+				}
 			}
 		);
 	}

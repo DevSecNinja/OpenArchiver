@@ -22,7 +22,9 @@ export function assertSafeRelativePath(value: string): void {
 			(part) =>
 				/[:<>"|?*\u0000-\u001f]/.test(part) ||
 				/[ .]$/.test(part) ||
-				/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(part)
+				/^(con|prn|aux|nul|com[1-9\u00b9\u00b2\u00b3]|lpt[1-9\u00b9\u00b2\u00b3])(?:\.|$)/i.test(
+					part
+				)
 		)
 	) {
 		throw new UnsafePathError();

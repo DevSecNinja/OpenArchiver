@@ -231,10 +231,27 @@ describe('compiled application archive boundaries', { timeout: 15000 }, () => {
 			path.dirname(filename)
 		);
 		const validate = module.exports.assertSafeRelativePath;
-		for (const value of [...unsafePaths, ...literalPaths, 'safe/NUL.txt', 'safe/COM1']) {
+		const deviceAliases = ['\u00b9', '\u00b2', '\u00b3'].flatMap((suffix) =>
+			['COM', 'lpt'].flatMap((prefix) => [
+				`safe/${prefix}${suffix}`,
+				`safe/${prefix}${suffix}.txt`,
+				`safe/${prefix}${suffix}.tar.gz`,
+			])
+		);
+		for (const value of [
+			...unsafePaths,
+			...literalPaths,
+			'safe/NUL.txt',
+			'safe/COM1',
+			...deviceAliases,
+		]) {
 			assert.throws(() => validate(value), unsafeError, value);
 		}
 		assert.doesNotThrow(() => validate('inbox/caf\u00e9/message.eml'));
+		assert.doesNotThrow(() => validate('inbox/COM10.txt'));
+		for (const value of deviceAliases) {
+			assert.doesNotThrow(() => assertSafeRelativePath(value));
+		}
 	});
 
 	it('rejects ingestion traversal before reading mail or reaching database and cleans the temp file', async () => {

@@ -166,16 +166,32 @@ host-managed mount/hard-link changes. Restrict filesystem write access to the ar
 administrators. Conditional writes retain the existing atomic hard-link publish behavior and its
 documented non-atomic claim fallback on filesystems without hard links.
 
-Default-mode ingestion stores attachment content before publishing an email, then inserts the email
-row and all attachment links in one database transaction. A storage or link-insert failure is reported,
-not treated as a duplicate: successful attachment records remain reusable, while no incomplete email
-row is visible to the next retry's deduplication check. This does not repair historical partial imports.
+Ingestion serializes the existing deduplication keys with PostgreSQL transaction advisory locks:
+effective root source plus the bounded Message-ID, the preserve-original raw-content hash, and
+extracted attachment-content hashes. The actual signed 64-bit lock IDs are deduplicated and sorted in
+one order across all categories before acquisition. Hash collisions only cause extra serialization;
+the existing SQL predicates still determine equality. Mailboxes are not part of the message lock,
+so another mailbox can receive a shared-file reference without a second full write.
+
+After acquiring the locks, a `READ COMMITTED` transaction rechecks deduplication and publishes the
+full email or shared reference together with its attachment links. All enclosed database work uses
+the same transaction connection. This deliberately holds a connection and transaction during storage
+I/O; unrelated keys remain independent unless they share an attachment key or collide. Monitor pool
+capacity/storage latency rather than assuming this is a short, database-only transaction.
+
+Storage or link-insert failures are explicit, and all new rows/links roll back so retries cannot skip an
+incomplete email. Attachment-ID memoization is transaction-local; rolled-back IDs cannot leak into
+another attempt. Previously committed attachment records remain reusable. Unlinked files can remain
+after rollback and are not deleted because another writer may own/reference published data. This
+does not repair historical partial imports or promise deduplication during concurrent source regrouping.
 
 `ingestion-attachments.test.cjs` uses the same explicit `STORAGE_AUTH_TEST_DATABASE_URL` and isolated
 PostgreSQL database pattern as the authorization tests below. It calls the compiled EMLConnector,
 IngestionService and encrypted storage with original colon/trailing-dot/space names in both preservation
 modes, verifies retrieved bytes and same-source deduplication, and injects storage and database-link
-failures before retry. Queue/provider orchestration is blocked; no external mailbox is contacted.
+failures before retry, including shared-reference publication. Concurrent independent service instances
+exercise two mailboxes in a merge group, headerless preserve-mode hash deduplication, unrelated-key
+progress, and a one-connection pool. Queue/provider orchestration is blocked; no external mailbox is contacted.
 Hosted `pnpm test:oss` runs it with the existing PostgreSQL service. Without an explicit local test URL
 it is skipped, not counted as integration proof.
 
