@@ -11,6 +11,8 @@
 	},
 	"scripts": {
 		"build": "tsc && pnpm copy-assets",
+		"test:storage": "node --test test/sqlite-absence.test.cjs test/eml-connector.test.cjs",
+		"test:localization": "node --test test/localization.test.mjs",
 		"dev": "tsc --watch",
 		"copy-assets": "cp -r src/locales dist/locales",
 		"start:ingestion-worker": "node dist/workers/ingestion.worker.js",
@@ -25,8 +27,8 @@
 		"db:migrate:dev": "ts-node-dev src/database/migrate.ts"
 	},
 	"dependencies": {
-		"@aws-sdk/client-s3": "^3.844.0",
-		"@aws-sdk/lib-storage": "^3.844.0",
+		"@aws-sdk/client-s3": "^3.1147.0",
+		"@aws-sdk/lib-storage": "^3.1147.0",
 		"@azure/msal-node": "^3.6.3",
 		"@casl/ability": "^6.8.1",
 		"@microsoft/microsoft-graph-client": "^3.0.7",
@@ -49,8 +51,8 @@
 		"google-auth-library": "^10.1.0",
 		"googleapis": "^152.0.0",
 		"i18next": "^25.4.2",
-		"i18next-fs-backend": "^2.6.0",
-		"i18next-http-middleware": "^3.8.0",
+		"i18next-fs-backend": "^2.6.8",
+		"i18next-http-middleware": "^3.9.9",
 		"imapflow": "2.3.0",
 		"ioredis": "^5.10.1",
 		"jose": "^6.0.11",
@@ -68,7 +70,6 @@
 		"pst-extractor": "^1.11.0",
 		"qrcode": "^1.5.4",
 		"reflect-metadata": "^0.2.2",
-		"sqlite3": "^5.1.7",
 		"xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
 		"yauzl": "^3.4.0",
 		"zod": "^4.1.5"
