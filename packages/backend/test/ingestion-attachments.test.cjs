@@ -1077,6 +1077,129 @@ test(
 		);
 
 		await t.test(
+			'source purge uses paginated S3 deletion and propagates later-page and per-key failures',
+			async (t) => {
+				const { mockS3 } = await import('./s3-fixture.mjs');
+				const storageModule = require('../dist/services/StorageService');
+				const entities = {
+					'&': '&amp;',
+					'<': '&lt;',
+					'>': '&gt;',
+					'"': '&quot;',
+					"'": '&apos;',
+				};
+				const escapeXml = (value) => value.replace(/[&<>"']/g, (char) => entities[char]);
+				const unescapeXml = (value) =>
+					value.replace(/&(amp|lt|gt|quot|apos);/g, (entity) =>
+						Object.keys(entities).find((char) => entities[char] === entity)
+					);
+				for (const outcome of ['success', 'list-failure', 'per-key-failure']) {
+					await t.test(outcome, async (t) => {
+						const source = await createSource();
+						await ingest(source, message(`s3-purge-${outcome}`));
+						const prefix = `open-archiver/${source.id}/`;
+						const archivedKeys = [
+							...(await emails(source)).map((row) => row.storagePath),
+							...(await attachments(source)).map((row) => row.storagePath),
+						];
+						const firstPage = [
+							...archivedKeys,
+							...Array.from(
+								{ length: 1000 - archivedKeys.length },
+								(_, i) => `${prefix}extra-${i}`
+							),
+						];
+						const lastKey = `${prefix}last.eml`;
+						const neighbor = `open-archiver/${source.id}-suffix/survivor.eml`;
+						const objects = new Set([...firstPage, lastKey, neighbor]);
+						const requests = [];
+						const batches = [];
+						const provider = await mockS3(t, async ({ method, url, body }) => {
+							assert.equal(
+								(await emails(source)).length,
+								0,
+								'Metadata must commit before S3 cleanup'
+							);
+							assert.equal((await attachments(source)).length, 0);
+							requests.push(method);
+							if (method === 'GET') {
+								assert.equal(url.searchParams.get('prefix'), prefix);
+								assert.equal(url.searchParams.get('max-keys'), '1000');
+								const token = url.searchParams.get('continuation-token');
+								if (token && outcome === 'list-failure') {
+									return {
+										status: 403,
+										body: '<Error><Code>AccessDenied</Code></Error>',
+									};
+								}
+								assert.equal(token, requests.length === 1 ? null : 'last-page');
+								const keys = token ? [lastKey] : firstPage;
+								return {
+									body: `<ListBucketResult><IsTruncated>${!token}</IsTruncated>${token ? '' : '<NextContinuationToken>last-page</NextContinuationToken>'}${keys.map((key) => `<Contents><Key>${escapeXml(key)}</Key><Size>1</Size></Contents>`).join('')}</ListBucketResult>`,
+								};
+							}
+							assert.equal(method, 'POST');
+							assert.ok(url.searchParams.has('delete'));
+							const keys = [...body.toString().matchAll(/<Key>(.*?)<\/Key>/g)].map(
+								(match) => unescapeXml(match[1])
+							);
+							batches.push(keys);
+							if (outcome === 'per-key-failure' && keys.includes(lastKey)) {
+								return {
+									body: `<DeleteResult><Error><Key>${escapeXml(lastKey)}</Key><Code>AccessDenied</Code><Message>Synthetic retention refusal</Message></Error></DeleteResult>`,
+								};
+							}
+							for (const key of keys) assert.equal(objects.delete(key), true);
+							return {
+								body: '<DeleteResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"/>',
+							};
+						});
+						// Inject only the backend instance; StorageService delegation and S3 HTTP are real.
+						storageModule.StorageService = class extends StorageService {
+							constructor() {
+								super();
+								this.provider = provider;
+							}
+						};
+						try {
+							const purging = IngestionService.delete(source.id, actor, 'fixture');
+							if (outcome === 'success') await purging;
+							else if (outcome === 'list-failure')
+								await assert.rejects(purging, { name: 'AccessDenied' });
+							else await assert.rejects(purging, /S3 failed to delete 1 object/);
+							assert.equal((await emails(source)).length, 0);
+							assert.equal((await attachments(source)).length, 0);
+							assert.equal(
+								(
+									await db
+										.select()
+										.from(schema.ingestionSources)
+										.where(eq(schema.ingestionSources.id, source.id))
+								).length,
+								0
+							);
+							assert.deepEqual(batches[0], firstPage);
+							assert.deepEqual(
+								requests,
+								outcome === 'list-failure'
+									? ['GET', 'POST', 'GET']
+									: ['GET', 'POST', 'GET', 'POST']
+							);
+							if (outcome !== 'list-failure') assert.deepEqual(batches[1], [lastKey]);
+							assert.deepEqual(
+								[...objects],
+								outcome === 'success' ? [neighbor] : [lastKey, neighbor]
+							);
+						} finally {
+							storageModule.StorageService = StorageService;
+							provider.client.destroy();
+						}
+					});
+				}
+			}
+		);
+
+		await t.test(
 			'queued root and child imports remove only unused exact pending uploads',
 			async () => {
 				const records = [];
