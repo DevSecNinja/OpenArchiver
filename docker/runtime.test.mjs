@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,42 +11,16 @@ import test from 'node:test';
 const root = new URL('../', import.meta.url);
 const require = createRequire(new URL('../package.json', import.meta.url));
 
-test('native SQLite supports import database CRUD', async () => {
+test('unused SQLite is absent from installed workspace dependencies', async () => {
 	const backendRequire = createRequire(
 		new URL('../packages/backend/package.json', import.meta.url)
 	);
-	const sqlite = backendRequire('sqlite3');
-	const database = new sqlite.Database(':memory:');
-	try {
-		await new Promise((resolve, reject) =>
-			database.exec(
-				'CREATE TABLE imported (id INTEGER PRIMARY KEY, answer INTEGER); INSERT INTO imported VALUES (1, 42); UPDATE imported SET answer = 43 WHERE id = 1',
-				(error) => (error ? reject(error) : resolve())
-			)
-		);
-		const row = await new Promise((resolve, reject) =>
-			database.get('SELECT answer FROM imported WHERE id = 1', (error, row) => {
-				if (error) return reject(error);
-				resolve(row);
-			})
-		);
-		assert.equal(row.answer, 43);
-		await new Promise((resolve, reject) =>
-			database.run('DELETE FROM imported WHERE id = 1', (error) =>
-				error ? reject(error) : resolve()
-			)
-		);
-		const deleted = await new Promise((resolve, reject) =>
-			database.get('SELECT answer FROM imported WHERE id = 1', (error, row) =>
-				error ? reject(error) : resolve(row)
-			)
-		);
-		assert.equal(deleted, undefined);
-	} finally {
-		await new Promise((resolve, reject) =>
-			database.close((error) => (error ? reject(error) : resolve()))
-		);
-	}
+	assert.throws(() => backendRequire.resolve('sqlite3'), { code: 'MODULE_NOT_FOUND' });
+	const packages = await readdir(new URL('node_modules/.pnpm/', root));
+	assert.deepEqual(
+		packages.filter((name) => name.startsWith('sqlite3@')),
+		[]
+	);
 });
 
 test('OSS container launcher has no restart loop or nested worker supervisor', async () => {

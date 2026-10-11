@@ -21,8 +21,6 @@ RUN --mount=type=cache,target=/root/.npm \
 
 # 1. Build Stage: Install all dependencies and build the project
 FROM base AS build
-RUN apk add --no-cache python3 py3-setuptools make g++
-ENV npm_config_nodedir=/usr/local
 COPY packages/frontend/svelte.config.js ./packages/frontend/
 
 # Install all dependencies.
@@ -46,15 +44,12 @@ RUN test ! -e packages/types/tsconfig.tsbuildinfo \
     && pnpm build:oss \
     && pnpm test:runtime
 
-# Install native addons for the target architecture, never at application startup.
+# Install locked production dependencies, never at application startup.
 FROM base AS production-dependencies
-RUN apk add --no-cache python3 py3-setuptools make g++
-ENV NODE_ENV=production \
-    npm_config_nodedir=/usr/local
+ENV NODE_ENV=production
 RUN --mount=type=cache,id=pnpm-production,target=/pnpm/store \
     pnpm install --frozen-lockfile --prod --ignore-scripts --store-dir=/pnpm/store \
-    && pnpm --recursive --include-workspace-root --store-dir=/pnpm/store rebuild sqlite3 \
-    && node -e 'require("./packages/backend/node_modules/sqlite3"); require("concurrently")' \
+    && node -e 'require("concurrently")' \
     && test -x node_modules/.bin/concurrently
 
 # 2. Production Stage: Copy complete runtime dependencies and built artifacts
@@ -85,8 +80,10 @@ COPY packages/types/LICENSE ./packages/types/LICENSE
 COPY --chmod=755 docker/docker-entrypoint.sh /usr/local/bin/
 
 USER node
-RUN node -e 'require("./packages/backend/node_modules/sqlite3")' \
-    && pnpm exec concurrently --version \
+RUN pnpm exec concurrently --version \
+    && test ! -e packages/backend/node_modules/sqlite3 \
+    && test -z "$(find /app/node_modules/.pnpm -mindepth 1 -maxdepth 1 -type d -name 'sqlite3@*' -print)" \
+    && test -z "$(find /app/node_modules -type f -name node_sqlite3.node -print)" \
     && test ! -e packages/backend/node_modules/drizzle-kit \
     && test ! -e packages/backend/drizzle.config.ts \
     && test ! -e packages/frontend/node_modules/@sveltejs/kit \

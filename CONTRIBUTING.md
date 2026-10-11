@@ -69,12 +69,13 @@ pnpm install --frozen-lockfile
 pnpm build:oss
 ```
 
-`pnpm-workspace.yaml` approves dependency build scripts for `esbuild` and `sqlite3`; the other listed
-builds remain denied. The earlier toolchain-only foundation denied `sqlite3`. The portable runtime
-change now approves its native install/build script so explicit locked installations can prepare the
-binding for the target architecture. Approval alone is not proof that the binding loads; run the native
-runtime checks described below. `verifyDepsBeforeRun: false` preserves explicit installation:
-`pnpm run` and `pnpm exec` must not install dependencies implicitly.
+The toolchain-only foundation denied `sqlite3` builds; the initial portable runtime change approved
+them. The revised runtime checks instead require the unused dependency and its build approval to be
+removed through [PR #123](https://github.com/DevSecNinja/OpenArchiver/pull/123). That prerequisite owns
+the manifest, lockfile and SQLite build-policy changes; the runtime patch alone does not remove the
+package. Keep `esbuild` build approval and the other existing policies unchanged.
+`verifyDepsBeforeRun: false` preserves explicit installation: `pnpm run` and `pnpm exec` must not
+install dependencies implicitly.
 
 `minimumReleaseAgeStrict: true` makes pnpm reject unattended updates when no requested version meets
 its release-age policy, rather than automatically recording exceptions. Interactive exceptions require
@@ -156,7 +157,7 @@ applies the committed migrations, inserts synthetic records and drops only its o
 It never reads `DATABASE_URL` or real provider credentials. The connection export is replaced with
 a real Drizzle/PostgreSQL connection to that database; no authorization, filter or query result is
 mocked. Unrelated ingestion, storage I/O, search and deletion entry points are blocked with
-fail-on-use test doubles to avoid starting provider, queue or native-SQLite dependencies.
+fail-on-use test doubles to avoid starting provider or queue dependencies.
 
 Without the explicit test URL this check is marked skipped locally; in CI a missing URL fails.
 The OSS validation job supplies an ephemeral PostgreSQL service and test-only credentials, so this
@@ -203,10 +204,10 @@ restoration.
 The policy tests import the compiled policy module, HTTP checks use synthetic loopback fixtures, and
 storage checks call the compiled service with isolated database rows, not the application entry point.
 
-The historical toolchain-only gate did not approve SQLite's native build. The current `allowBuilds`
-policy approves both `esbuild` and `sqlite3`, but a passing source build still does not prove that SQLite
-or the production application can start. After building, `pnpm test:runtime` checks native SQLite CRUD,
-startup diagnostics and worker supervision. The separate `.github/workflows/container-runtime.yml`
+After the SQLite-removal prerequisite above, `pnpm test:runtime` checks that the unused package is
+absent, along with startup diagnostics and worker supervision. Package absence and a passing source
+build alone do not prove that the production application can start. The separate
+`.github/workflows/container-runtime.yml`
 builds the production image and runs `pnpm test:integration`'s driver on native amd64 and arm64,
 covering non-root/read-only startup, migrations, synthetic ingestion/search, shutdown and paired
 database/archive restore. See the [runtime and recovery guide](docs/user-guides/maintained-fork.md)

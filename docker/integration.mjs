@@ -343,6 +343,7 @@ try {
 	inside(async () => {
 		const assert = await import('node:assert/strict');
 		const { writeFile, unlink } = await import('node:fs/promises');
+		assert.throws(() => require.resolve('sqlite3'), { code: 'MODULE_NOT_FOUND' });
 		await assert.rejects(
 			writeFile('/app/.runtime-write-test', 'test'),
 			(error) => error.code === 'EROFS' || error.code === 'EACCES'

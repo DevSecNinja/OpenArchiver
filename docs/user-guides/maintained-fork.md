@@ -6,6 +6,28 @@ unchanged. This runtime work depends on the pnpm 12.10.1 / SheetJS integrity fou
 [DevSecNinja/OpenArchiver#72](https://github.com/DevSecNinja/OpenArchiver/pull/72).
 Do not edit generated lockfile checksums or suppress integrity failures.
 
+The revised runtime fixture and Dockerfile also depend on the unused-SQLite removal in
+[DevSecNinja/OpenArchiver#123](https://github.com/DevSecNinja/OpenArchiver/pull/123). That separate
+change owns the manifest, lockfile and SQLite build-approval removal. Until it is integrated, this
+runtime-only patch deliberately fails its package-absence checks against the old dependency graph.
+A labeled PR #123 removal + PR #118 runtime fixture passed on Linux amd64 using build tree
+`8b0bc66fca460c6d80c9a9fdcef1f1d32d35897f` and application image
+`sha256:ebf4f4871e1c82684b64a6bb7db60078f3834a0ba19b7be14e332934ca83e233`.
+The final external harness tree was `8e64f816b7717a096aa8dcae7928e4a3f7b9e61f`: its retry-counter
+assertion was corrected after the image build, without changing the application image. That harness
+adds a real initial-import retry and duplicate-import check not yet included in this runtime-only
+patch. It passed package/binding absence, default/arbitrary-UID read-only startup, HTML/assets,
+PostgreSQL migrations, ingestion/search, retry/dedup, shutdown and paired restore.
+
+The retained `sqlite-removal-validation-receipt.json` has SHA-256
+`e49fbb2ab398028f80b52a9c2c5756ac0551e60ae0109c2a5e1c2ff207365c1b`; the external driver has SHA-256
+`376f9fbd7d53121ed609f885c856c75cc36d83e9f550ff839288f0427bd6e94f`.
+This is combined-fixture evidence, not standalone PR #118 validation: it also uses the removal
+branch's actual-main dependency graph, including SvelteKit 2.70.3 rather than this branch's 2.38.1.
+Final merged-main, platform and adoption acceptance remain pending. No new vulnerability scan,
+ARM64, live-provider, PST or S3 result is claimed for this combination. Earlier results below remain
+historical.
+
 ## Container contract
 
 Build the OSS image from source; do not patch dependencies into an old precompiled image. Source
@@ -47,8 +69,9 @@ migration while all writers are stopped; do not recursively change unrelated dir
   volume, including when S3 storage is selected.
 - `/tmp` needs writable scratch space. Size it for uploads, PST extraction, and concurrent jobs.
   It must not be treated as the durable archive.
-- Native SQLite and production dependencies are installed at build time. Native load checks fail
-  the build if a binding is missing; no runtime install repairs it. SQLite remains on 5.1.7.
+- Locked production dependencies are installed at build time. The revised image omits unused SQLite
+  and its compiler/rebuild steps, verifies package absence and the supervisor CLI, and relies on the
+  real PostgreSQL-backed application lifecycle for readiness. No runtime install repairs dependencies.
 - `verifyDepsBeforeRun: false` preserves the no-install runtime contract under pnpm 12.
 - The API and frontend share a network namespace. Keep backend port 4000 for the compiled frontend's
   localhost proxy. Expose the frontend only; `PORT_FRONTEND` controls its internal listening port.
@@ -103,10 +126,12 @@ incremental metadata and nested host `node_modules` are excluded, with build ass
 contamination markers. Environment files, package-manager config, archive data and secrets are also
 excluded from the build context.
 
-The production native rebuild must include the full workspace and its root. A backend-filtered pnpm
-rebuild removed other workspaces' links and the root `concurrently` executable despite a successful
-SQLite load. The build now checks both native loading and the production CLI layout, and the
-integration driver starts the actual default command rather than replacing it with a test-only server.
+The initial SQLite-based packaging needed a full-workspace native rebuild: filtering it to the backend
+removed other workspace links and the root `concurrently` executable. That rebuild is no longer
+needed after the unused dependency is removed. The revised build retains the production CLI check
+and verifies that neither the SQLite package nor its native binding is installed. Other platform
+dependencies are still installed normally; no package files are manually stripped. The integration
+driver starts the actual default command rather than replacing it with a test-only server.
 
 The fixture covers default UID 1000 and arbitrary UID 12345 read-only startup using the actual image
 command, rendered `/setup` and `/signin` HTML with first-party emitted JavaScript and CSS assets,
@@ -118,11 +143,11 @@ restored ingestion-source API state, search rebuilding, and nonzero
 termination after a fatal worker exit. With `preserveOriginalFile=true`, attachments remain inside the
 EML; no separate attachment rows are expected.
 
-On 2026-10-10, the independent runtime slice based on foundation `d1f69c83` passed the source build,
+Historically, on 2026-10-10, the runtime slice based on foundation `d1f69c83` passed the source build,
 five runtime tests, six inherited OSS policy tests, and the complete fixture above on rootless Podman
 5.8.6, Linux amd64. The final image ID was
 `sha256:d53b694c40a6aacf9e3cac73d0be4c09d026094d8bfbd1bfa6d7685cf1356a8d`.
-The image build also passed the host-contamination assertions, runtime tests, and final-user native
+That image build also passed the host-contamination assertions, runtime tests, and final-user native
 SQLite/concurrently checks. Hosted CI reports native amd64 and arm64 results separately; this local
 result does not establish ARM64 success. No deployment or upstream image publication is claimed.
 
@@ -132,7 +157,8 @@ The base stage upgrades the Alpine OS `zlib` package within the image's configur
 build time, not startup. Confirm the installed version and scan the resulting image: Alpine
 `1.3.2-r1` fixes CVE-2026-85091 affecting `1.3.2-r0`. This does not establish the status of any zlib
 copy bundled with Node or another dependency.
-SQLite 5's native build-tool dependencies remain subject to separate remediation. The same-major
+The historical SQLite 5 artifact's native build-tool findings are not a reason to retain an unused
+database dependency; its removal is tracked separately in PR #123. The same-major
 concurrently 9.2.4 supervisor still pins vulnerable shell-quote 1.9.0; see
 [DevSecNinja/OpenArchiver#113](https://github.com/DevSecNinja/OpenArchiver/issues/113).
 The launcher uses static operator-controlled command strings, not request data. This limits the
@@ -143,7 +169,7 @@ Concurrently 10.0.6 first meets the three-day release-age requirement at
 Do not infer that all advisories are fixed from a successful install or from excluding an unused
 development tool. Record an actual final-image inventory and scan limitations separately.
 
-The final amd64 image contained Node 22.23.3, pnpm 12.10.1, SQLite 5.1.7, concurrently 9.2.4,
+That historical amd64 image contained Node 22.23.3, pnpm 12.10.1, SQLite 5.1.7, concurrently 9.2.4,
 Alpine 3.24.2, tini 0.19.0-r3 and OS zlib 1.3.2-r1. Inspection found the native SQLite binding and
 no physical esbuild executable, `drizzle-kit`, `drizzle.config.ts`, or installed `@sveltejs/kit`.
 Trivy 0.74.0 scanned the exported image using its database updated at
@@ -152,13 +178,15 @@ records with **8 critical, 107 high, 96 medium and 12 low** package-advisory mat
 target remained. These are scanner matches, not deduplicated exploitability findings. Trivy warned
 that Alpine 3.24 was absent from its end-of-life list; this is not an OS support-lifecycle attestation.
 
-Remaining critical matches include CASL, fast-xml-parser, form-data, localization packages,
-proxy-addr, shell-quote and node-tar. SQLite/native toolchain remediation remains separate in
+Those historical critical matches include CASL, fast-xml-parser, form-data, localization packages,
+proxy-addr, shell-quote and node-tar. SQLite dependency remediation remains separate in
 [DevSecNinja/OpenArchiver#28](https://github.com/DevSecNinja/OpenArchiver/issues/28), alongside the
 other issue-specific dependency updates. Removing development packages does not update bundled
 frontend framework code: the compiled frontend still uses SvelteKit 2.38.1, and a manifest-based
 image scan may miss bundled vulnerabilities. The scan excludes test sidecars and is not a live
 application security assessment.
+These inventory and scan counts predate later main dependency updates and the SQLite-removal
+revision; they must not be presented as results for a new image or the combined removal fixture.
 
 The ZIP path-escape concern raised in the review of
 [DevSecNinja/OpenArchiver#117](https://github.com/DevSecNinja/OpenArchiver/pull/117) is unresolved in
