@@ -3,6 +3,7 @@ import {
 	S3Client,
 	GetObjectCommand,
 	PutObjectCommand,
+	DeleteObjectCommand,
 	HeadObjectCommand,
 	NotFound,
 	ListObjectsV2Command,
