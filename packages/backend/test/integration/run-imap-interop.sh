@@ -126,6 +126,7 @@ server_created=true
 	--mount "type=bind,source=$scratch/ca.crt,target=/fixture-ca/ca.crt,readonly" \
 	--workdir /app --env NODE_EXTRA_CA_CERTS=/fixture-ca/ca.crt \
 	--env LOG_LEVEL=silent --env DOTENV_CONFIG_PATH=/dev/null --env ARCHIVE_DRAFTS=false \
+	--env STORAGE_TYPE=local --env STORAGE_LOCAL_ROOT_PATH=/tmp/oa-imap-storage \
 	--env ALL_INCLUSIVE_ARCHIVE=false --env OA_IMAP_INTEROP=1 \
 	"$NODE_IMAGE" node -e 'setTimeout(() => process.exit(1), 150000)' >/dev/null
 client_created=true
