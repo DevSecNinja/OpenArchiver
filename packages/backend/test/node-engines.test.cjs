@@ -4,13 +4,11 @@ const { createRequire } = require('node:module');
 const { join, resolve } = require('node:path');
 const { test } = require('node:test');
 
-test('project Node range satisfies the native builder and workspace documentation tooling', () => {
+test('project Node range satisfies the workspace documentation tooling', () => {
 	const rootPath = resolve(__dirname, '../../..');
 	const project = require(join(rootPath, 'package.json'));
-	const sqliteRequire = createRequire(require.resolve('sqlite3/package.json'));
-	const builder = sqliteRequire('node-gyp/package.json');
-	const builderRequire = createRequire(sqliteRequire.resolve('node-gyp/package.json'));
-	const { satisfies, subset, validRange } = builderRequire('semver');
+	const frontendRequire = createRequire(join(rootPath, 'packages/frontend/package.json'));
+	const { satisfies, subset, validRange } = frontendRequire('semver');
 	const range = project.engines.node;
 	assert.ok(validRange(range), 'The project must declare a valid Node range');
 	for (const [version, allowed] of [
@@ -28,10 +26,8 @@ test('project Node range satisfies the native builder and workspace documentatio
 	const docs = JSON.parse(
 		readFileSync(join(rootPath, 'node_modules', 'vitepress-openapi', 'package.json'), 'utf8')
 	);
-	for (const dependency of [require('sqlite3/package.json'), builder, docs]) {
-		assert.ok(
-			subset(range, dependency.engines.node),
-			`Node range ${range} exceeds ${dependency.name}@${dependency.version}: ${dependency.engines.node}`
-		);
-	}
+	assert.ok(
+		subset(range, docs.engines.node),
+		`Node range ${range} exceeds ${docs.name}@${docs.version}: ${docs.engines.node}`
+	);
 });

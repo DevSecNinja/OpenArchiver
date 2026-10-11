@@ -11,7 +11,7 @@
 	},
 	"scripts": {
 		"build": "tsc && pnpm copy-assets",
-		"test:native": "node --test test/sqlite-native.test.cjs test/eml-connector.test.cjs",
+		"test:storage": "node --test test/sqlite-absence.test.cjs test/eml-connector.test.cjs",
 		"dev": "tsc --watch",
 		"copy-assets": "cp -r src/locales dist/locales",
 		"start:ingestion-worker": "node dist/workers/ingestion.worker.js",
@@ -69,7 +69,6 @@
 		"pst-extractor": "^1.11.0",
 		"qrcode": "^1.5.4",
 		"reflect-metadata": "^0.2.2",
-		"sqlite3": "6.0.1",
 		"xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
 		"yauzl": "^3.4.0",
 		"zod": "^4.1.5"

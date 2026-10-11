@@ -7,7 +7,6 @@ allowBuilds:
     '@tailwindcss/oxide': false
     esbuild: true
     msgpackr-extract: false
-    sqlite3: true
     vue-demi: false
 
 # Keep run/exec from implicitly installing dependencies.

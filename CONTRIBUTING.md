@@ -60,12 +60,11 @@ fork patches. Do not use Renovate to automatically merge upstream commits.
 ### Pinned toolchain and tarball integrity
 
 Use Node.js 22.13 or newer in the Node 22 release line and the pnpm version pinned in
-`package.json` (12.10.1). The selected node-gyp 12.4.0 builder requires at least Node 22.9,
-and the workspace's vitepress-openapi 0.1.18 documentation tooling declares
+`package.json` (12.10.1). The workspace's vitepress-openapi 0.1.18 documentation tooling declares
 `^20.19.0 || ^22.13.0 || >=24.0.0`. The root range is `^22.13.0 || >=24.0.0`:
 Node 22.13+ within 22.x and Node 24+ are allowed, but Node 23 is excluded. This covers the required
-native builder and documentation tooling, not every platform-specific optional dependency.
-These are dependency engine requirements; the native/source-build
+documentation tooling, not every platform-specific optional dependency.
+These are dependency engine requirements; the source-build
 validation was executed on Node 22.23.3, not on the minimum version. The Docker build and
 documentation workflow read that pin rather than selecting another version. Enable the Corepack
 pnpm shim so nested workspace scripts use the same version. From a clean checkout:
@@ -76,9 +75,9 @@ pnpm install --frozen-lockfile
 pnpm build:oss
 ```
 
-`pnpm-workspace.yaml` allows the `esbuild` and `sqlite3` dependency scripts. The SQLite installer
-must install a working native binding during dependency installation; other listed builds remain
-denied. `verifyDepsBeforeRun: false` preserves explicit installation: `pnpm run` and
+`pnpm-workspace.yaml` allows the `esbuild` dependency scripts; other listed builds remain denied.
+The backend uses PostgreSQL and does not install a SQLite driver.
+`verifyDepsBeforeRun: false` preserves explicit installation: `pnpm run` and
 `pnpm exec` must not install dependencies implicitly.
 
 `minimumReleaseAgeStrict: true` makes pnpm reject unattended updates when no requested version meets
@@ -108,43 +107,34 @@ When changing this toolchain, run `pnpm --filter @open-archiver/backend update x
 twice, checking that the recorded checksum survives each operation and that no unrelated dependency
 resolutions or integrity values change, then repeat the frozen install and OSS source build.
 
-### SQLite native dependency regression checks
+### PostgreSQL storage and SQLite dependency-absence checks
 
 After the clean frozen install and OSS build above, run on Linux with Node.js 22.13+:
 
 ```sh
-pnpm --filter @open-archiver/backend test:native
+pnpm --filter @open-archiver/backend test:storage
 ```
 
-These built-in `node:test` fixtures also run in `pnpm test:oss`. They load the real native binding
-(missing bindings fail, not skip), exercise in-memory create/write/query/update/constraint/close
-operations, and verify closed database reopen, integrity and file restore. They also use the compiled
-`EMLConnector` with a synthetic EML ZIP, both attachment-preservation modes, and encrypted local
-storage. Raw EML bytes and SHA-256 hashes must survive an isolated storage-directory backup and
-restore. No mailbox, cloud, API or PostgreSQL credentials are needed. The EML connector currently
-has no SQLite cache API; these are separate native and connector/storage checks, not a substitute
-for application ingestion, indexing and paired PostgreSQL/object-storage restore. They do not cover
-PST imports or untested architectures.
+These built-in `node:test` fixtures also run in `pnpm test:oss`. They check that neither the backend
+nor Drizzle can resolve `sqlite3`, and that the application pnpm installation contains no SQLite
+driver or SQLite-only build dependencies. A subprocess rejects any SQLite driver load while importing
+the real Drizzle PostgreSQL modules and PST parser. This is a bounded module-load check, not a full
+application startup or PST import test. No replacement driver or fake SQLite implementation is used.
 
-Validate source fallback separately in a disposable Alpine Node.js 22.13+ build environment containing
-Python 3, make, g++, and the image's Node headers under `/usr/local/include/node`. Install development
-dependencies explicitly (`pnpm install --frozen-lockfile --prod=false --store-dir=/pnpm/store`), build
-OSS, then disable network access and force the native source rebuild:
+The backend database, schema and migrations use PostgreSQL. Drizzle's declared SQLite peer is optional;
+removing the backend's unused direct `sqlite3` dependency must also remove that resolved peer.
+When pnpm retains the stale peer snapshot, remove and re-add only the identical Drizzle version in a
+temporary lockfile-only workspace, restore its unchanged manifest range, and let pinned pnpm generate
+the lockfile. Verify that no SQLite package is reintroduced and that all retained resolutions and
+integrities are unchanged. Do not hand-edit lockfile entries, add overrides, or disable optional
+dependencies globally; other packages still use them.
 
-```sh
-NODE_ENV=development npm_config_build_from_source=true npm_config_nodedir=/usr/local \
-  PNPM_CONFIG_SIDE_EFFECTS_CACHE=false \
-  pnpm --recursive --include-workspace-root --store-dir=/pnpm/store rebuild sqlite3
-pnpm --filter @open-archiver/backend test:native
-```
-
-Keep the same store directory for install and rebuild, include all workspaces and the workspace root,
-and keep development/production mode explicit. A backend-filtered pnpm rebuild can prune other
-workspace links. Preserve installer/compiler failures; do not ignore scripts, replace SQLite with a
-mock, download packages at startup, or add transitive overrides or release-age exceptions. Record the
-actual installed sqlite3/node-gyp/tar versions and `sqlite_version()` for the exact artifact tested;
-the wrapper version alone does not establish its embedded SQLite version or resolve every tar
-advisory elsewhere in the dependency graph.
+The compiled `EMLConnector` fixture imports a synthetic EML ZIP in both attachment-preservation modes
+using encrypted local storage. Raw EML bytes and SHA-256 hashes must survive an isolated
+storage-directory backup and restore. No mailbox, cloud, API or PostgreSQL credentials are needed
+for these fixtures. The EML connector has no SQLite cache API. Application ingestion, PostgreSQL
+migrations/authorization, deduplication/retries, indexing and paired PostgreSQL/object-storage restore
+require their separate integration checks. These fixtures do not establish those behaviors.
 
 ### Mail/upload parser regressions
 
@@ -261,7 +251,7 @@ applies the committed migrations, inserts synthetic records and drops only its o
 It never reads `DATABASE_URL` or real provider credentials. The connection export is replaced with
 a real Drizzle/PostgreSQL connection to that database; no authorization, filter or query result is
 mocked. Unrelated ingestion, storage I/O, search and deletion entry points are blocked with
-fail-on-use test doubles to avoid starting provider, queue or native-SQLite dependencies.
+fail-on-use test doubles to avoid starting provider or queue dependencies.
 
 Without the explicit test URL this check is marked skipped locally; in CI a missing URL fails.
 The OSS validation job supplies an ephemeral PostgreSQL service and test-only credentials, so this
@@ -295,17 +285,17 @@ real compiled `createAbilityFor` function and installed CASL dependency; build f
 source changes. The runner discovers both CommonJS (`*.test.cjs`) and ESM (`*.test.mjs`) tests under
 `packages/backend/test`. Its synthetic policy/subject fixtures cover default denial, mailbox and source
 boundaries, action isolation, explicit denial, no implicit ingestion-to-archive grants, and administrator
-wildcards. The same runner discovers the native SQLite, EML connector/storage, and mail/upload parser
+wildcards. The same runner discovers SQLite dependency-absence, EML connector/storage, and mail/upload parser
 regressions documented above. No real mailboxes, mail contents, attachments, or cloud credentials are used.
 The engine-metadata regression checks that the entire declared Node range satisfies the installed
-SQLite builder and documentation tooling, including the excluded Node 23 branch. It does not execute
+documentation tooling, including the excluded Node 23 branch. It does not execute
 the application on every allowed version or establish support for optional native accelerators.
 The same runner also discovers the focused HTTP and PostgreSQL storage authorization checks described
 above. CI supplies the isolated PostgreSQL service; local database coverage requires the explicit test URL.
 
 ### Coverage limits and follow-up work
 
-This is a build, native SQLite, policy/HTTP/storage-authorization/parser, and frontend-adapter regression gate,
+This is a build, dependency-absence, policy/HTTP/storage-authorization/parser, and frontend-adapter regression gate,
 not end-to-end archive validation.
 Frontend regressions exercise compiled session and proxy behavior against a synthetic loopback API,
 not real API authentication. The gate does not establish all policy interpolation or database filtering,
@@ -314,8 +304,8 @@ The policy tests import the compiled policy module, HTTP checks use synthetic lo
 storage checks call the compiled service with isolated database rows, not the application entry point.
 The compiled application-boundary tests and MIME/attachment coverage limits are documented above.
 
-`esbuild` and `sqlite3` are approved in `pnpm-workspace.yaml` `allowBuilds`; SQLite regression tests
-require its native binding. A passing source build and these fixtures do not prove that the production
+Only `esbuild` is approved in `pnpm-workspace.yaml` `allowBuilds`. SQLite is not an application dependency.
+A passing source build and these fixtures do not prove that the production
 application can start. Image builds, non-root startup, migrations, synthetic application ingestion/search,
 and paired restore integration coverage belong to
 [issue #2](https://github.com/DevSecNinja/OpenArchiver/issues/2). Do not treat this workflow as

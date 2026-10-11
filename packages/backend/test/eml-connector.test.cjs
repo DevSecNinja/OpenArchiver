@@ -16,7 +16,7 @@ const message = Buffer.from(
 		'To: Fixture Recipient <recipient@example.invalid>',
 		'Date: Sat, 10 Oct 2026 12:00:00 +0000',
 		'Message-ID: <fixture@example.invalid>',
-		'Subject: Native dependency EML fixture',
+		'Subject: EML storage fixture',
 		'MIME-Version: 1.0',
 		'Content-Type: multipart/mixed; boundary="oa-fixture"',
 		'',
@@ -40,7 +40,7 @@ function sha256(bytes) {
 }
 
 test('real EML ZIP import preserves raw bytes and restores encrypted local objects', async (t) => {
-	const root = await mkdtemp(join(tmpdir(), 'oa-eml-native-'));
+	const root = await mkdtemp(join(tmpdir(), 'oa-eml-storage-'));
 	t.after(() => rm(root, { recursive: true, force: true }));
 	const storageRoot = join(root, 'storage');
 	const encryptionKey = '12'.repeat(32);
@@ -102,7 +102,7 @@ test('real EML ZIP import preserves raw bytes and restores encrypted local objec
 			const [email] = emails;
 			assert.equal(email.id, '<fixture@example.invalid>');
 			assert.equal(email.threadId, '<fixture@example.invalid>');
-			assert.equal(email.subject, 'Native dependency EML fixture');
+			assert.equal(email.subject, 'EML storage fixture');
 			assert.equal(email.path, 'Inbox');
 			assert.equal(email.from[0].address, 'sender@example.invalid');
 			assert.equal(email.to[0].address, 'recipient@example.invalid');
