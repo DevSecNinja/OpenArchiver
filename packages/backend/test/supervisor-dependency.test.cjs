@@ -15,6 +15,30 @@ const supervisorManifest = rootRequire(supervisorManifestPath);
 const supervisorRequire = createRequire(supervisorManifestPath);
 const cli = path.resolve(path.dirname(supervisorManifestPath), supervisorManifest.bin.concurrently);
 
+test('declared Node branches satisfy supervisor and documentation tooling', () => {
+	const frontendRequire = createRequire(rootRequire.resolve('./packages/frontend/package.json'));
+	const { satisfies, subset } = frontendRequire('semver');
+	const range = rootRequire('./package.json').engines.node;
+	for (const [version, expected] of [
+		['22.12.0', false],
+		['22.13.0', true],
+		['23.0.0', false],
+		['24.0.0', true],
+	]) {
+		assert.equal(satisfies(version, range), expected, `Node ${version}: ${range}`);
+	}
+	for (const dependency of [
+		supervisorManifest,
+		supervisorRequire('yargs/package.json'),
+		rootRequire('./node_modules/vitepress-openapi/package.json'),
+	]) {
+		assert.ok(
+			subset(range, dependency.engines.node),
+			`${range} must satisfy ${dependency.name}: ${dependency.engines.node}`
+		);
+	}
+});
+
 test('installed supervisor uses the selected ESM release and fixed shell-quote', async (t) => {
 	const shellQuote = supervisorRequire('shell-quote/package.json');
 	assert.equal(rootRequire('./package.json').dependencies.concurrently, '10.0.6');

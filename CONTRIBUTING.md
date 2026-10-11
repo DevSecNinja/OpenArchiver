@@ -59,7 +59,8 @@ fork patches. Do not use Renovate to automatically merge upstream commits.
 
 ### Pinned toolchain and tarball integrity
 
-Use Node.js 22.13.0 or newer and the pnpm version pinned in `package.json` (12.10.1). The Docker build and
+Use Node.js 22.x starting at 22.13.0, or Node.js 24.0.0 and newer, with the pnpm version pinned
+in `package.json` (12.10.1). Node.js 23 is not supported. The Docker build and
 documentation workflow read that pin rather than selecting another version. Enable the Corepack
 pnpm shim so nested workspace scripts use the same version. From a clean checkout:
 
@@ -118,8 +119,9 @@ own exact 10.2.2 dependency. The regression suite checks actual CommonJS `debug`
 both installed color versions. Do not remove the anchor without reviewing that peer graph.
 
 Version 10 is ESM-only. Although concurrently declares Node.js 22 or newer, its yargs 18
-dependency requires at least 22.12.0 on Node.js 22. The root engine retains the stricter 22.13.0
-floor required by the existing `vitepress-openapi` documentation tooling.
+dependency requires at least 22.12.0 on Node.js 22. The root engine uses
+`^22.13.0 || >=24.0.0` to also satisfy the existing `vitepress-openapi` documentation tooling,
+which requires the stricter 22.13.0 floor on Node.js 22 and excludes Node.js 23.
 Application scripts invoke its CLI,
 not the removed programmatic `killOthers` option, and do not use the removed `--name-separator`
 flag. The existing `--names`, `--restart-tries` and `--restart-after` CLI options remain supported,
@@ -127,14 +129,18 @@ as do `--kill-others` and `--success all`. Default prefix colors now auto-select
 executable from the installed `concurrently/package.json` `bin.concurrently` field: version 10
 uses `dist/bin/index.js`, not the old `dist/bin/concurrently.js`.
 
-After an explicit frozen install, run the focused checks on Node.js 22.13.0 or newer in Linux:
+After an explicit frozen install, run the focused checks in Linux on a supported Node.js 22.x
+or 24+ release:
 
 ```sh
 node --test packages/backend/test/supervisor-dependency.test.cjs
 ```
 
 `pnpm test:oss` also discovers this suite. It checks the installed ESM entry point and dependency
-versions, then uses synthetic children to exercise CLI names, quoted arguments, indexing heap
+versions and verifies the declared engine range against installed dependency requirements,
+including rejection of Node.js 22.12 and 23 and acceptance of 22.13 and 24. These are semver
+metadata assertions, not execution on each Node.js version. It then uses synthetic children
+to exercise CLI names, quoted arguments, indexing heap
 defaults/overrides, fatal and successful child exits, signal forwarding, graceful sibling exit,
 and absence of respawn. These process checks can run without networking as a non-root user with
 a read-only filesystem and writable `/tmp`. On Windows, the POSIX process checks are explicitly
