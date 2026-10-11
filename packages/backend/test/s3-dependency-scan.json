@@ -1,0 +1,216 @@
+{
+	"scope": "Issue 8 production-only dependency/protocol fixture, not an API/native-runtime validation",
+	"validatedBase": "d1f69c83d733f7ca3f8ab5f902a3c48e90ff0311",
+	"lockfileSha256": "dff4a4691c69368da13c66683f3ab2152c015d0e59f857e9a006cb81fd71a785",
+	"subsequentIntegration": {
+		"base": "bccf8768c94b7420088d21dc29a6d76f0f59ff3d",
+		"lockfileSha256": "cafc10865fe8e718be9eac3382942acd85cb518cc8c1991586f1c6830163a7f7",
+		"method": "Clean Git three-way application of package-manager-generated SDK changes; main HTTP dependency graph preserved",
+		"validation": "Hosted run 38082652745 passed for head a158ba4bc5443773ab3dc0a07d71c2c068c7024c: OSS build and 32 tests, none failed or skipped. Not rescanned locally; all scan results below belong to validatedBase.",
+		"hostedRun": "https://github.com/DevSecNinja/OpenArchiver/actions/runs/38082652745"
+	},
+	"prePaginationIntegration": {
+		"preparedAt": "2026-10-11",
+		"base": "4c0805de2f5f68cbbd8b2bd90e8fc28a0389aeef",
+		"lockfileSha256": "48b4daafb08e047015e8428cec54da656a279cfbe850b0956fefcbe75338b5a2",
+		"method": "Conflict-free Git merge preserving main's mail/parser, frontend, and HTTP dependencies; no manual lockfile edits",
+		"scopeProof": "All 37 SDK closure package/snapshot records are unchanged from a158ba4; only the original SDK closure differs from main; all other main importer/package/snapshot records and package-manager lock preserved",
+		"validation": "Hosted run 38142178893 passed for de485e0: 51 backend tests including S3/PostgreSQL and 16 production frontend tests, none failed or skipped; frontend types had 0 errors and 44 warnings. Actual GitHub Copilot Balanced review 5483469443 on that head reported 0 open findings. No new local fixture or scan.",
+		"hostedRun": "https://github.com/DevSecNinja/OpenArchiver/actions/runs/38142178893",
+		"copilotReview": "https://github.com/DevSecNinja/OpenArchiver/pull/121#pullrequestreview-5483469443"
+	},
+	"currentMainIntegration": {
+		"preparedAt": "2026-10-11",
+		"base": "b27216e9d6225a07459749dbaa2aedbd31fe154e",
+		"lockfileSha256": "48b4daafb08e047015e8428cec54da656a279cfbe850b0956fefcbe75338b5a2",
+		"method": "Conflict-free Git merge of main after PR 122; preserve landed prefix pagination/error handling, DeleteObjectCommand import, deletion tests and shared fixture",
+		"scopeProof": "Main lockfile unchanged from 4c0805de; merged lockfile and SDK manifest unchanged from de485e0, preserving the previously verified 37-package SDK closure and all unrelated main records",
+		"validation": "Fresh hosted CI and actual matching-head GitHub Copilot review pending signed publication. Earlier CI/review and fixture/scan results remain historical; no new local installation, build, container, or scan."
+	},
+	"nodeImage": "node:22.23.3-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402",
+	"fixtureImageId": "sha256:825919941e3fdeb8d6e7705959466b7626481f95b32fea019dbac847ab79b0e8",
+	"scanner": {
+		"name": "Trivy",
+		"version": "0.74.0",
+		"databaseUpdatedAt": "2026-10-10T12:33:35.352381306Z",
+		"scanCreatedAt": "2026-10-10T21:54:20.326457544+02:00",
+		"warnings": [
+			"Alpine 3.24 was not on the scanner EOL list; absence of an OS finding is not a support guarantee."
+		]
+	},
+	"installed": {
+		"node": "v22.23.3",
+		"pnpm": "12.10.1",
+		"packageManifests": 595,
+		"selected": [
+			{
+				"name": "@aws-sdk/client-s3",
+				"version": "3.1147.0"
+			},
+			{
+				"name": "@aws-sdk/lib-storage",
+				"version": "3.1147.0"
+			},
+			{
+				"name": "@aws-sdk/core",
+				"version": "3.978.1"
+			},
+			{
+				"name": "@aws-sdk/xml-builder",
+				"version": "3.972.41"
+			}
+		],
+		"fastXmlParserInstalled": false
+	},
+	"sdkDependencyClosure": [
+		{
+			"name": "@aws-sdk/checksums",
+			"version": "3.1001.1"
+		},
+		{
+			"name": "@aws-sdk/client-s3",
+			"version": "3.1147.0"
+		},
+		{
+			"name": "@aws-sdk/core",
+			"version": "3.978.1"
+		},
+		{
+			"name": "@aws-sdk/credential-provider-env",
+			"version": "3.972.72"
+		},
+		{
+			"name": "@aws-sdk/credential-provider-http",
+			"version": "3.972.74"
+		},
+		{
+			"name": "@aws-sdk/credential-provider-ini",
+			"version": "3.973.17"
+		},
+		{
+			"name": "@aws-sdk/credential-provider-login",
+			"version": "3.972.79"
+		},
+		{
+			"name": "@aws-sdk/credential-provider-node",
+			"version": "3.972.84"
+		},
+		{
+			"name": "@aws-sdk/credential-provider-process",
+			"version": "3.972.72"
+		},
+		{
+			"name": "@aws-sdk/credential-provider-sso",
+			"version": "3.973.16"
+		},
+		{
+			"name": "@aws-sdk/credential-provider-web-identity",
+			"version": "3.972.78"
+		},
+		{
+			"name": "@aws-sdk/lib-storage",
+			"version": "3.1147.0"
+		},
+		{
+			"name": "@aws-sdk/middleware-sdk-s3",
+			"version": "3.972.77"
+		},
+		{
+			"name": "@aws-sdk/nested-clients",
+			"version": "3.997.46"
+		},
+		{
+			"name": "@aws-sdk/signature-v4-multi-region",
+			"version": "3.996.47"
+		},
+		{
+			"name": "@aws-sdk/token-providers",
+			"version": "3.1138.0"
+		},
+		{
+			"name": "@aws-sdk/types",
+			"version": "3.974.6"
+		},
+		{
+			"name": "@aws-sdk/xml-builder",
+			"version": "3.972.41"
+		},
+		{
+			"name": "@aws/lambda-invoke-store",
+			"version": "0.3.0"
+		},
+		{
+			"name": "@smithy/core",
+			"version": "3.35.2"
+		},
+		{
+			"name": "@smithy/credential-provider-imds",
+			"version": "4.5.2"
+		},
+		{
+			"name": "@smithy/fetch-http-handler",
+			"version": "5.8.0"
+		},
+		{
+			"name": "@smithy/node-http-handler",
+			"version": "4.12.1"
+		},
+		{
+			"name": "@smithy/signature-v4",
+			"version": "5.7.4"
+		},
+		{
+			"name": "@smithy/types",
+			"version": "4.19.0"
+		},
+		{
+			"name": "base64-js",
+			"version": "1.5.1"
+		},
+		{
+			"name": "bowser",
+			"version": "2.11.0"
+		},
+		{
+			"name": "buffer",
+			"version": "5.6.0"
+		},
+		{
+			"name": "events",
+			"version": "3.3.0"
+		},
+		{
+			"name": "ieee754",
+			"version": "1.2.1"
+		},
+		{
+			"name": "inherits",
+			"version": "2.0.4"
+		},
+		{
+			"name": "readable-stream",
+			"version": "3.6.2"
+		},
+		{
+			"name": "safe-buffer",
+			"version": "5.2.1"
+		},
+		{
+			"name": "stream-browserify",
+			"version": "3.0.0"
+		},
+		{
+			"name": "string_decoder",
+			"version": "1.3.0"
+		},
+		{
+			"name": "tslib",
+			"version": "2.8.1"
+		},
+		{
+			"name": "util-deprecate",
+			"version": "1.0.2"
+		}
+	],
+	"sdkDependencyClosureFindingCount": 0
+}
