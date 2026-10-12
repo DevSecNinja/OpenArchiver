@@ -29,7 +29,7 @@
 	},
 	"dependencies": {
 		"concurrently": "10.0.6",
-		"dotenv-cli": "8.0.0",
+		"dotenv-cli": "11.0.0",
 		"supports-color": "8.1.1"
 	},
 	"devDependencies": {
