@@ -1,4 +1,6 @@
 import { ingestionQueue } from '../queues';
+import { SyncSessionService, type UploadDispatchOutcome } from '../../services/SyncSessionService';
+import { logger } from '../../config/logger';
 
 /**
  * One page per Redis round trip. Bounded because a single command carrying every mailbox of a
@@ -20,18 +22,48 @@ const ENQUEUE_PAGE_SIZE = 500;
 export const enqueueMailboxJobs = async (
 	ingestionSourceId: string,
 	userEmails: string[],
-	sessionId: string
-): Promise<void> => {
-	for (let i = 0; i < userEmails.length; i += ENQUEUE_PAGE_SIZE) {
-		await ingestionQueue.addBulk(
-			userEmails.slice(i, i + ENQUEUE_PAGE_SIZE).map((userEmail) => ({
-				name: 'process-mailbox',
-				data: {
-					ingestionSourceId,
-					userEmail,
+	sessionId: string,
+	uploadInputPath?: string,
+	claimStartedAt?: Date | null
+): Promise<'dispatched' | Exclude<UploadDispatchOutcome, 'aborted'>> => {
+	try {
+		for (let i = 0; i < userEmails.length; i += ENQUEUE_PAGE_SIZE) {
+			await ingestionQueue.addBulk(
+				userEmails.slice(i, i + ENQUEUE_PAGE_SIZE).map((userEmail) => ({
+					name: 'process-mailbox',
+					data: {
+						ingestionSourceId,
+						userEmail,
+						sessionId,
+						...(uploadInputPath ? { uploadInputPath } : {}),
+					},
+				}))
+			);
+		}
+		return 'dispatched';
+	} catch (error) {
+		if (uploadInputPath) {
+			try {
+				const outcome = await SyncSessionService.abortUploadDispatch(
 					sessionId,
-				},
-			}))
-		);
+					ingestionSourceId,
+					uploadInputPath,
+					claimStartedAt
+				);
+				if (outcome !== 'aborted') {
+					logger.warn(
+						{ error, ingestionSourceId, sessionId, outcome },
+						'Not replaying an upload dispatch without a failed current claim'
+					);
+					return outcome;
+				}
+			} catch (abortError) {
+				throw new AggregateError(
+					[error, abortError],
+					'Mailbox dispatch and upload receipt abort failed'
+				);
+			}
+		}
+		throw error;
 	}
 };

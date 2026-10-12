@@ -7,7 +7,7 @@ const { Readable } = require('node:stream');
 const { buffer } = require('node:stream/consumers');
 const { createHash } = require('node:crypto');
 const { createRequire, wrap } = require('node:module');
-const { runInThisContext } = require('node:vm');
+const { runInThisContext, runInNewContext } = require('node:vm');
 const archiver = require('archiver');
 const { simpleParser } = require('mailparser');
 const { assertSafeRelativePath } = require('../dist/helpers/relativePath');
@@ -45,17 +45,22 @@ const unsafePaths = [
 	'open-archiver/source/emails/../../other-source/file.eml',
 	'/absolute.eml',
 	'//server/share/file.eml',
-	'C:/absolute.eml',
-	'C:relative.eml',
 	'\\\\server\\share\\file.eml',
 	'safe\\..\\file.eml',
 	'safe/./file.eml',
 	'safe/../file.eml',
 	'safe//file.eml',
-	'safe/.. /file.eml',
-	'safe/trailing./file.eml',
-	'file.eml:stream',
 	'bad\0name.eml',
+];
+const windowsDrivePaths = ['C:/absolute.eml', 'C:relative.eml'];
+const literalPaths = [
+	'report:Q4.pdf',
+	'a:report.eml',
+	'a:folder/a:report.eml',
+	...windowsDrivePaths,
+	'trailing.',
+	'trailing ',
+	'safe/.. /file.eml',
 ];
 const unsafeError = { name: 'UnsafePathError' };
 let fixture;
@@ -88,15 +93,16 @@ async function assertOperationsReject(key) {
 		() => provider.get(key),
 		() => provider.exists(key),
 		() => provider.delete(key),
+		() => provider.deleteObject(key),
 	]) {
 		await assert.rejects(operation(), unsafeError, key);
 	}
 }
 
-async function upload(zip) {
+async function upload(zip, filename = 'fixture.zip') {
 	const body = Buffer.concat([
 		Buffer.from(
-			'--upload\r\nContent-Disposition: form-data; name="file"; filename="fixture.zip"\r\n' +
+			`--upload\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\n` +
 				'Content-Type: application/zip\r\n\r\n'
 		),
 		zip,
@@ -197,6 +203,94 @@ describe('compiled application archive boundaries', { timeout: 15000 }, () => {
 		assert.deepEqual(await fs.readdir(root), []);
 	});
 
+	it('preserves literal POSIX names for existing keys and new uploads', async () => {
+		for (const name of literalPaths) {
+			const key = `legacy/${name}`;
+			await fs.mkdir(path.dirname(path.join(root, key)), { recursive: true });
+			await fs.writeFile(path.join(root, key), raw);
+			assert.equal(await provider.exists(key), true);
+			assert.deepEqual(await buffer(await provider.get(key)), raw);
+			await assert.rejects(provider.put(key, raw, { overwrite: false }), {
+				name: 'StorageObjectExistsError',
+			});
+
+			await provider.put(key, raw);
+			await provider.delete(key);
+			assert.equal(await provider.exists(key), false);
+		}
+		const zip = await makeZip('reports:Q4/trailing. /message.eml');
+		for (const filename of ['report:Q4.zip', 'archive.zip.', 'archive.zip ']) {
+			const key = await upload(zip, filename);
+			assert.ok(key.endsWith(`-${filename}`));
+			assert.deepEqual(await buffer(await storage.get(key)), zip);
+			await storage.delete(key);
+		}
+	});
+
+	it('exact deletion preserves same-prefix files and never recursively deletes directories', async () => {
+		await provider.put('exact/keyA', raw);
+		await provider.put('exact/keyA-suffix', binary);
+		await provider.deleteObject('exact/keyA');
+		assert.equal(await provider.exists('exact/keyA'), false);
+		assert.deepEqual(await buffer(await provider.get('exact/keyA-suffix')), binary);
+		await provider.put('exact/keyA/child', raw);
+		await assert.rejects(provider.deleteObject('exact/keyA'));
+		assert.deepEqual(await buffer(await provider.get('exact/keyA/child')), raw);
+		await storage.put('exact/encrypted', raw);
+		await storage.deleteObject('exact/encrypted');
+		assert.equal(await storage.exists('exact/encrypted'), false);
+		await provider.delete('exact/keyA');
+		assert.equal(await provider.exists('exact/keyA/child'), false);
+		assert.equal(await provider.exists('exact/keyA-suffix'), true);
+	});
+
+	it('stores single-letter colon names literally at the POSIX storage root', async () => {
+		for (const key of ['a:report.eml', 'a:folder/a:report.eml']) {
+			await storage.put(key, raw);
+			assert.equal(await storage.exists(key), true);
+			assert.deepEqual(await buffer(await storage.get(key)), raw);
+			assert.notDeepEqual(await fs.readFile(path.join(root, key)), raw);
+			await storage.deleteObject(key);
+			assert.equal(await storage.exists(key), false);
+		}
+	});
+
+	it('still rejects Windows stream, device and normalized path aliases on Windows', async () => {
+		const filename = require.resolve('../dist/helpers/relativePath');
+		const module = { exports: {} };
+		runInNewContext(wrap(await fs.readFile(filename, 'utf8')), {
+			process: { platform: 'win32' },
+		})(
+			module.exports,
+			() => assert.fail('Unexpected import'),
+			module,
+			filename,
+			path.dirname(filename)
+		);
+		const validate = module.exports.assertSafeRelativePath;
+		const deviceAliases = ['\u00b9', '\u00b2', '\u00b3'].flatMap((suffix) =>
+			['COM', 'lpt'].flatMap((prefix) => [
+				`safe/${prefix}${suffix}`,
+				`safe/${prefix}${suffix}.txt`,
+				`safe/${prefix}${suffix}.tar.gz`,
+			])
+		);
+		for (const value of [
+			...unsafePaths,
+			...literalPaths,
+			'safe/NUL.txt',
+			'safe/COM1',
+			...deviceAliases,
+		]) {
+			assert.throws(() => validate(value), unsafeError, value);
+		}
+		assert.doesNotThrow(() => validate('inbox/caf\u00e9/message.eml'));
+		assert.doesNotThrow(() => validate('inbox/COM10.txt'));
+		for (const value of deviceAliases) {
+			assert.doesNotThrow(() => assertSafeRelativePath(value));
+		}
+	});
+
 	it('rejects ingestion traversal before reading mail or reaching database and cleans the temp file', async () => {
 		const boundary = await loadIngestionBoundary();
 		for (const unsafe of unsafePaths.filter(Boolean)) {
@@ -214,7 +308,7 @@ describe('compiled application archive boundaries', { timeout: 15000 }, () => {
 			await assert.rejects(fs.access(tempFilePath), { code: 'ENOENT' });
 		}
 		assert.equal(boundary.reads(), 0);
-		for (const valid of [undefined, '', 'inbox/caf\u00e9/']) {
+		for (const valid of [undefined, '', 'inbox/caf\u00e9/', 'a:folder']) {
 			const tempFilePath = path.join(fixture, 'valid-path-message.eml');
 			await fs.writeFile(tempFilePath, raw);
 			const result = await boundary.service.processEmail(
@@ -226,7 +320,7 @@ describe('compiled application archive boundaries', { timeout: 15000 }, () => {
 			assert.match(result.message, /Unexpected ingestion file read/);
 			await assert.rejects(fs.access(tempFilePath), { code: 'ENOENT' });
 		}
-		assert.equal(boundary.reads(), 3);
+		assert.equal(boundary.reads(), 4);
 	});
 
 	it('rejects directory, file, dangling and cross-source symlink components', async () => {
@@ -328,8 +422,6 @@ describe('compiled application archive boundaries', { timeout: 15000 }, () => {
 			'inbox/../message.eml',
 			'inbox/./message.eml',
 			'/absolute/message.eml',
-			'C:/absolute/message.eml',
-			'C:relative.eml',
 			'inbox\\..\\message.eml',
 			'\\\\server\\share\\message.eml',
 			'__MACOSX/../../message.eml',
@@ -388,7 +480,8 @@ describe('compiled application archive boundaries', { timeout: 15000 }, () => {
 				}
 			}
 			assert.equal(count, 1);
-			assert.equal(await storage.exists(uploadedFilePath), false);
+			assert.equal(await storage.exists(uploadedFilePath), true);
+			await storage.deleteObject(uploadedFilePath);
 		}
 	});
 });

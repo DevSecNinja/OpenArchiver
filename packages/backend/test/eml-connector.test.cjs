@@ -97,7 +97,8 @@ test('real EML ZIP import preserves raw bytes and restores encrypted local objec
 				emails.push(email);
 			}
 			assert.equal(emails.length, 1);
-			assert.equal(await storage.exists(uploadPath), false);
+			// Connector exhaustion alone cannot release a shared input before canonical completion.
+			assert.equal(await storage.exists(uploadPath), true);
 			assert.deepEqual(connector.getUpdatedSyncState(), {});
 			const [email] = emails;
 			assert.equal(email.id, '<fixture@example.invalid>');

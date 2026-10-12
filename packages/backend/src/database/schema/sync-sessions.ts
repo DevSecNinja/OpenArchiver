@@ -1,4 +1,4 @@
-import { boolean, integer, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { boolean, integer, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { ingestionSources } from './ingestion-sources';
 import { relations } from 'drizzle-orm';
 
@@ -19,6 +19,8 @@ export const syncSessions = pgTable('sync_sessions', {
 	failedMailboxes: integer('failed_mailboxes').notNull().default(0),
 	/** Aggregated error messages from all failed process-mailbox jobs */
 	errorMessages: text('error_messages').array().notNull().default([]),
+	/** Internal upload-only completion proof. Null on legacy and remote-provider sessions. */
+	uploadReceipt: jsonb('upload_receipt'),
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 	/**
 	 * Updated each time a process-mailbox job reports its result.

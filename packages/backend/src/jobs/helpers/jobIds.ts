@@ -1,3 +1,5 @@
+import type { JobsOptions } from 'bullmq';
+
 /**
  * The BullMQ job id a source's continuous-sync cycle runs under.
  *
@@ -18,3 +20,9 @@ export const continuousSyncJobId = (ingestionSourceId: string): string =>
  */
 export const initialImportJobId = (ingestionSourceId: string): string =>
 	`initial-import:${ingestionSourceId}`;
+
+export const uploadFinalizerOptions = (sessionId: string): JobsOptions => ({
+	jobId: `upload-finished-${sessionId}`,
+	removeOnComplete: true,
+	removeOnFail: true,
+});

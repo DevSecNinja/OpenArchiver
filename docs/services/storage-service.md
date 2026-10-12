@@ -113,8 +113,9 @@ Retrieves a file from the specified path as a readable stream.
 
 ### `delete(path)`
 
-Deletes from the storage backend. The S3 provider retains its existing **key-prefix** contract:
-all current objects whose keys start with `path` are selected, not just an exact key. Choose prefixes
+Uses the provider's existing deletion semantics: local files/directories are removed recursively;
+S3 retains its **key-prefix** contract: all current objects whose keys start with `path` are selected,
+not just an exact key. Use `deleteObject` when prefix deletion is not intended. Choose prefixes
 carefully; the provider does not add a path separator or broaden/narrow the caller's prefix.
 
 - **`path: string`**: The file identifier for local storage, or key prefix for S3.
@@ -132,6 +133,18 @@ errors; they are not proof of compatibility with a live S3 service.
 After building the OSS workspace, run the deletion regressions with
 `node --test packages/backend/test/s3-delete.test.mjs`. They use the compiled provider and actual AWS
 SDK against a loopback HTTP fixture with synthetic credentials, without contacting a real bucket.
+
+---
+
+### `deleteObject(path)`
+
+Deletes only the exact object. It does not delete keys sharing that prefix, such as `keyA-suffix`
+or `keyA/child` when deleting `keyA`. Local directories are rejected rather than recursively removed;
+local Unicode fallback and containment checks still apply. Missing objects are a no-op.
+
+Archive lifecycle cleanup calls this operation only after metadata deletion commits and exact-path
+reference checks complete under the shared storage locks. A cleanup failure is reported explicitly;
+it can leave unlinked bytes but must not undo metadata deletion or erase a surviving reference.
 
 ---
 

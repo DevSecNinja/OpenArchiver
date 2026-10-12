@@ -82,10 +82,11 @@ export class JobsService {
 
 	private async formatJob(job: Job): Promise<IJob> {
 		const state = await job.getState();
+		const { uploadInputPath: _uploadInputPath, ...publicData } = job.data;
 		return {
 			id: job.id,
 			name: job.name,
-			data: job.data,
+			data: publicData,
 			state: state,
 			failedReason: job.failedReason,
 			timestamp: job.timestamp,

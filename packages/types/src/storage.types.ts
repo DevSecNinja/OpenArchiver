@@ -48,6 +48,9 @@ export interface IStorageProvider {
 	 */
 	delete(path: string): Promise<void>;
 
+	/** Deletes only the exact object, never a directory or other keys sharing its prefix. */
+	deleteObject(path: string): Promise<void>;
+
 	/**
 	 * Checks for the existence of a file.
 	 * @param path - The unique identifier for the file to check.

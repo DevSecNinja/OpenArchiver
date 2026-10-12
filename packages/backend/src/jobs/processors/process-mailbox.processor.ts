@@ -14,6 +14,8 @@ import { indexingQueue, ingestionQueue } from '../queues';
 import { SyncSessionService } from '../../services/SyncSessionService';
 import { isMailboxUnavailableError } from '../../services/ingestion-connectors/MicrosoftConnector';
 import { unlink } from 'fs/promises';
+import { uploadedInputPath, type UploadMailboxIdentity } from '../../helpers/uploadCompletion';
+import { uploadFinalizerOptions } from '../helpers/jobIds';
 
 /**
  * Handles ingestion of emails for a single user's mailbox.
@@ -25,6 +27,9 @@ import { unlink } from 'fs/promises';
  */
 export const processMailboxProcessor = async (job: Job<IProcessMailboxJob>) => {
 	const { ingestionSourceId, userEmail, sessionId } = job.data;
+	const uploadIdentity: UploadMailboxIdentity | undefined = job.data.uploadInputPath
+		? { sourceId: ingestionSourceId, mailbox: userEmail, inputPath: job.data.uploadInputPath }
+		: undefined;
 	const BATCH_SIZE: number = config.meili.indexingBatchSize;
 	let emailBatch: PendingEmail[] = [];
 
@@ -75,18 +80,26 @@ export const processMailboxProcessor = async (job: Job<IProcessMailboxJob>) => {
 		kind: 'error' | 'skipped'
 	): Promise<void> => {
 		try {
-			const { isLast } = await SyncSessionService.recordMailboxResult(sessionId, outcome);
+			const { isLast } = await SyncSessionService.recordMailboxResult(
+				sessionId,
+				outcome,
+				uploadIdentity
+			);
 
 			if (isLast) {
 				logger.info(
 					{ ingestionSourceId, sessionId, kind },
 					'Last mailbox job completed, dispatching sync-cycle-finished'
 				);
-				await ingestionQueue.add('sync-cycle-finished', {
-					ingestionSourceId,
-					sessionId,
-					isInitialImport: false,
-				});
+				await ingestionQueue.add(
+					'sync-cycle-finished',
+					{
+						ingestionSourceId,
+						sessionId,
+						isInitialImport: false,
+					},
+					uploadIdentity ? uploadFinalizerOptions(sessionId) : undefined
+				);
 			}
 		} catch (sessionError) {
 			logger.error(
@@ -100,6 +113,17 @@ export const processMailboxProcessor = async (job: Job<IProcessMailboxJob>) => {
 		const source = await IngestionService.findById(ingestionSourceId);
 		if (!source) {
 			throw new Error(`Ingestion source with ID ${ingestionSourceId} not found`);
+		}
+		const inputPath = uploadedInputPath(source.credentials);
+		if (uploadIdentity || inputPath) {
+			if (!uploadIdentity || inputPath !== uploadIdentity.inputPath) {
+				throw new Error(
+					'Uploaded input was replaced or has no original job snapshot; retaining input'
+				);
+			}
+			if (!(await SyncSessionService.uploadInputForMailbox(sessionId, uploadIdentity))) {
+				throw new Error('Upload session has no canonical receipt; retaining input');
+			}
 		}
 
 		connector = EmailProviderFactory.createConnector(source);
@@ -340,7 +364,8 @@ export const processMailboxProcessor = async (job: Job<IProcessMailboxJob>) => {
 						error: true,
 						message: `${userEmail}: ${messagesFailed} of ${messagesSeen} messages failed to archive. First errors: ${failureSamples.join('; ')}`,
 					}
-				: newSyncState
+				: newSyncState,
+			uploadIdentity
 		);
 
 		if (isLast) {
@@ -348,11 +373,15 @@ export const processMailboxProcessor = async (job: Job<IProcessMailboxJob>) => {
 				{ ingestionSourceId, sessionId },
 				'Last mailbox job completed, dispatching sync-cycle-finished'
 			);
-			await ingestionQueue.add('sync-cycle-finished', {
-				ingestionSourceId,
-				sessionId,
-				isInitialImport: false,
-			});
+			await ingestionQueue.add(
+				'sync-cycle-finished',
+				{
+					ingestionSourceId,
+					sessionId,
+					isInitialImport: false,
+				},
+				uploadIdentity ? uploadFinalizerOptions(sessionId) : undefined
+			);
 		}
 	} catch (error) {
 		// Emails still being archived when the mailbox failed are given the chance to finish before

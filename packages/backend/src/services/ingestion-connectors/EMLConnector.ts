@@ -30,6 +30,11 @@ const streamToBuffer = (stream: Readable): Promise<Buffer> => {
 export class EMLConnector implements IEmailConnector {
 	private storage: StorageService;
 	private options: ConnectorOptions;
+	private fetchFailures = { count: 0, samples: [] as string[] };
+
+	public getFetchFailures() {
+		return this.fetchFailures;
+	}
 
 	constructor(
 		private credentials: EMLImportCredentials,
@@ -142,16 +147,6 @@ export class EMLConnector implements IEmailConnector {
 			throw error;
 		} finally {
 			await fs.rm(tempDir, { recursive: true, force: true });
-			if (this.credentials.uploadedFilePath && !this.credentials.localFilePath) {
-				try {
-					await this.storage.delete(this.credentials.uploadedFilePath);
-				} catch (error) {
-					logger.error(
-						{ error, file: this.credentials.uploadedFilePath },
-						'Failed to delete EML file after processing.'
-					);
-				}
-			}
 		}
 	}
 
@@ -183,6 +178,9 @@ export class EMLConnector implements IEmailConnector {
 						const emailObject = await this.parseMessage(readStream, relativePath);
 						yield emailObject;
 					} catch (error) {
+						this.fetchFailures.count++;
+						if (this.fetchFailures.samples.length < 5)
+							this.fetchFailures.samples.push('An EML entry could not be parsed');
 						logger.error(
 							{ error, file: fileName },
 							'Failed to process a single EML file from zip. Skipping.'

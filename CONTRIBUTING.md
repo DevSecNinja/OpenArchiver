@@ -244,19 +244,193 @@ attachment rows. No PST import coverage is implied by these synthetic EML/ZIP fi
 ### Archive path constraints
 
 ZIP entry names and connector folder paths must be relative, slash-separated paths without empty,
-dot or dot-dot components, backslashes, colons, NULs, or trailing dots/spaces in a component.
-An optional trailing slash denotes a directory. These portable constraints also reject absolute,
-drive-relative, UNC and Windows alias forms before ingestion adds a source namespace. Valid Unicode
-names remain supported. Unsafe ZIP names abort the import with an explicit error; previously
-processed entries are not rolled back.
+dot or dot-dot components, backslashes or NULs. Host-absolute and UNC paths are rejected before
+ingestion adds a source namespace. Drive-prefixed forms (including drive-relative paths) are rejected
+on Windows; on POSIX, `C:relative.eml` and `C:/literal.eml` are ordinary relative names.
+An optional trailing slash denotes a directory.
+On POSIX hosts (including the Linux container), colons and trailing dots/spaces are literal filename
+characters: existing keys remain readable and new uploads, folder names, message IDs and attachments
+retain them without changing original metadata. On Windows hosts, stream/device names and trailing
+dot/space aliases are rejected because they do not identify ordinary literal files. Valid Unicode
+names remain supported. Unsafe ZIP names abort the import explicitly; previously processed entries
+are not rolled back.
 
-Local storage applies the same constraints to `put`, `get`, `delete`, and `exists`, including each
+Windows also rejects exact `CONIN$` and `CONOUT$` path segments, case-insensitively, as documented
+[console aliases](https://learn.microsoft.com/windows/win32/api/fileapi/nf-fileapi-createfilew#remarks).
+This exact-name rule does not reject extension forms such as `CONIN$.txt`; existing trailing-dot/space
+and classic device-name rules still apply. POSIX keeps these names literal.
+
+Local storage applies the same constraints to `put`, `get`, `delete`, `deleteObject`, and `exists`, including each
 NFC/NFD lookup candidate, and refuses symlink components below the configured root. Existing archives
 using such links must be migrated to ordinary directories/files. The configured root and its ancestors
 are trusted; these checks are **not protection against concurrent filesystem mutation (TOCTOU)** or
 host-managed mount/hard-link changes. Restrict filesystem write access to the archive service and trusted
 administrators. Conditional writes retain the existing atomic hard-link publish behavior and its
 documented non-atomic claim fallback on filesystems without hard links.
+
+Ingestion and deletion share **64 fixed global PostgreSQL advisory lock stripes**, independent of
+attachment count. Existing deduplication identities and exact storage paths map to these stripes;
+stripe IDs are deduplicated and acquired in ascending order. Collisions serialize work without changing
+the SQL equality/cardinality rules. High-fanout messages may occupy all 64 stripes temporarily.
+Discovery only reads state: if a fresh read reveals another required stripe, the transaction rolls back
+before external writes, expands its held set, and rechecks. Expansion strictly adds a stripe and is bounded
+by 64; locks are never acquired out of order. Unicode-normalization variants share a path lock.
+
+After acquiring the locks, a `READ COMMITTED` transaction rechecks deduplication and publishes the
+full email or shared reference together with its attachment links. All enclosed database work uses
+the same transaction connection. This deliberately holds a connection and transaction during storage
+I/O; disjoint stripes remain independent. Monitor pool
+capacity/storage latency rather than assuming this is a short, database-only transaction.
+
+Storage or link-insert failures are explicit, and all new rows/links roll back so retries cannot skip an
+incomplete email. Attachment-ID memoization is transaction-local; rolled-back IDs cannot leak into
+another attempt. New attachment objects use stable root/full-SHA256 paths and conditional publication;
+an existing winner must match decrypted bytes' hash and size before adoption. Retries can rediscover
+files left by rollback without multiplying random object names. Original filename metadata and existing
+random-path records remain usable. Corrupt winners are explicit failures, not overwritten.
+
+Per-email deletion commits row/link removals before physical cleanup. Cleanup reacquires exact-path
+stripes and always rechecks email/attachment rows, current pending-source credentials and unfinished
+upload receipts. The same lower-level upload scan protects source-prefix cleanup; exact-cleanup callers
+cannot omit it. A pending source without a receipt preserves its selected EML or attachment bytes,
+including Unicode aliases. Creation/replacement either publishes before cleanup's fresh scan or waits
+and rejects a removed input; deleting the last pending source permits exact disposal.
+`deleteObject` removes exactly one object, unlike the existing `delete` prefix contract.
+DB/search/storage are not one atomic system: a crash, failed audit or cleanup error after metadata commit
+can leave unlinked bytes. These are not blindly deleted, and no general repair/GC service is introduced.
+
+**Whole-source deletion is a conservative coarse-gate operation:** it cancels queued jobs only after
+metadata deletion commits, outside all 64 stripes, and never waits for workers while holding locks.
+Refusal, search failure or database rollback preserves queued work, including an unclaimed initial
+import. Each deleted source's existing audit entry is recorded immediately after the metadata commit,
+before fallible queue cancellation. Post-commit cancellation failures are explicit; stale jobs cannot
+write a deleted source. Active transactions
+finish first; queued/cached-source writers must freshly verify their source/root inside the gate before
+publishing. Group membership is rechecked before DB removal, then prefix cleanup reacquires all stripes
+and retains prefixes still referenced by any email/attachment row. External attachment ownership that
+would break a surviving link refuses deletion explicitly. Cooperating archive **writes may pause
+globally during large source-deletion phases**; ordinary reads do not take this gate. This is an
+implementation tradeoff, not a user-selected throughput setting or deployment approval.
+After metadata commit, unused pending PST/EML/MBOX upload objects from the deleted source and its
+children are removed with exact-object deletion, never prefix deletion. Archive references and
+surviving file-source credentials are rechecked under the same locks; the encrypted source scan is
+paged. Source create/update publishes upload references under the path locks and verifies newly
+selected objects still exist, without requiring a consumed upload to exist for an ordinary source edit.
+Partial or blank provider edits are merged against fresh, locked credentials, never a preflight
+encrypted snapshot; concurrent replacement and canonical input clearing cannot be undone by a blank form.
+Referenced objects are retained; undecipherable relevant credentials fail cleanup explicitly.
+
+### Uploaded-input completion
+
+Upload failure/skip notes preserve concrete diagnostics, normalize CR/LF/NUL across the complete
+mailbox-plus-diagnostic text without changing canonical mailbox identity, and cap each
+complete mailbox-plus-message note at 1,024 UTF-8 bytes using `truncateToBytes`. At most five notes are
+retained, without changing canonical result idempotency; only missing or blank messages use generic
+fallback text. An existing prefix for the same canonical mailbox is retained rather than added again;
+text naming a different mailbox is not stripped. These upload-specific bounds do not change the
+legacy remote-provider result path.
+
+A partial mailbox-enqueue failure marks only that upload dispatch aborted in the existing receipt.
+Its original input and closed mailbox set remain protected; late delivery/results cannot complete it.
+A genuinely stale current upload is marked aborted under the same fresh source/session guards when
+recovery makes its source retryable. It retains its original input claim until matching replacement.
+A retry atomically publishes a fresh receipt for the same source, input and complete mailbox set before
+retiring matching aborted receipts. Repointed, unknown or mismatched claims are retained, not guessed.
+Only the replacement's complete canonical successes permit release. Keyed upload finalizers remove
+both successful and failed terminal job records so the stale-session sweep can retry the same ID after
+cleanup or receipt-marking failure.
+
+Lost dispatch acknowledgements are classified against the original claim epoch and freshly locked
+source/session state. Only a valid failed current dispatch is aborted and made retryable; canonical
+success requires an existing successful receipt. A retired, purged or replaced dispatch is obsolete,
+not proof of success, and is not replayed. A missing receipt for a still-current active claim is logged
+as unknown, with its input and source state retained until existing sessionless recovery makes it
+retryable. Master error publication repeats claim-epoch and sibling-session guards under lock so a
+newer same-key claim cannot be overwritten between compensation and the catch handler.
+For a dispatched session, retryable error additionally requires a valid matching receipt with a
+durably committed abort flag; a failed compensation write cannot admit overlapping work. Discovery
+failure before any session exists keeps its separate guarded recovery path.
+
+Each new receipt explicitly owns its original credential claim. Releasing that claim and clearing
+matching credentials commit atomically before physical cleanup. Later cleanup retries never clear
+credentials again: any same-key reselection, including an `auth_success` claim with no new session,
+remains a live reference. Missing claim-phase metadata is not release proof. Finalizer status,
+message and timestamp updates also recheck the source's claim start time and session identity under
+the lock, so an older failed receipt may retire without overwriting a newer same-input retry.
+An `auth_success` selection is already a pending new claim even before its new master or session
+exists; an old owned receipt may neither publish status over it nor clear its matching credentials.
+
+POSIX single-letter colon names such as `a:report.eml` and `a:folder` remain literal relative paths
+through ZIP validation, source-path composition and local storage. Windows-only colon checks still
+reject drive and alternate-stream forms; traversal, absolute-path and symlink checks are unchanged.
+
+The optional `UPLOAD_QUEUE_TEST_HOST` / `UPLOAD_QUEUE_TEST_PASSWORD` environment variables enable
+real BullMQ/Redis purge and same-ID finalizer regressions in `upload-completion.test.cjs`. The local
+fixture driver reuses its owned Redis instance; hosted CI does not require an additional service.
+
+Migration `0045_upload_completion_receipt` adds one nullable, internal `sync_sessions.upload_receipt`
+JSONB column. It stores only the source ID, original uploaded storage key, a closed normalized mailbox
+set, and canonical outcomes, never credentials or mail content. Existing/null/malformed receipts do
+not authorize deletion. This bounded upload-only receipt is a conservative implementation decision,
+not a user-selected retention setting or a general attempt-lease system.
+
+EML, MBOX and PST connectors no longer delete an uploaded input when enumeration ends or fails.
+The masters close discovery before persisting a receipt and dispatching jobs with the original input
+snapshot. The worker reports success only after iteration, all email writes and indexing-queue
+handoff complete with zero fetch/archive failures. Results are recorded idempotently per declared
+mailbox under the session row lock: reporting A twice cannot complete `[A, B]`, and unknown input or
+mailbox identities cannot advance progress. Failure/skip before full canonical success stays failed;
+only a redundant attempt after independently established success can be ignored.
+
+Finalization and stale-session terminal shortcuts use canonical coverage for uploaded sessions, not
+aggregate counters. A separate release step takes storage stripes before source/session locks, checks
+fresh credentials, the original session/input identity and other unfinished sessions, then clears only
+the matching consumed `uploadedFilePath`. Original display-name metadata, ordinary edits and reupload
+remain supported. Failed/canceled/partial-discovery, paused or ambiguous input stays retained.
+For a successfully completed old input, finalization may perform exact reference-safe cleanup without
+changing replacement credentials or newer import status. The receipt's optional `disposition: handled`
+is recorded only after cleanup succeeds (including retaining bytes owned by another reference).
+An absent current path is not disposition proof; cleanup/marking failures keep the receipt available
+for retry or explicit source purge. Failed old receipts and stale recovery do not overwrite newer status.
+Stale recovery makes a genuinely inactive **current** uploaded import retryable as `error` while
+retaining its receipt and input. It rechecks the source/input, session heartbeat and discovery-claim
+time under locks, and defers if a newer or active session exists. It does not manufacture completion
+or retire ambiguous old work. Releasers honor the freshly locked `handled` disposition before any
+credential/storage action, and upload finalization preserves a pause made after its earlier reads.
+Unfinished receipts continue protecting their original input even after a source is repointed; source
+deletion collects their keys before cascade. Source credentials and receipts participate in both exact
+and prefix cleanup reference checks.
+
+MBOX continues to stream without whole-file spooling. No session-row lock is held while waiting for
+storage stripes. External/local file paths are never released by this completion hook. A crash between
+metadata release and physical cleanup can retain unlinked input bytes; there is no new GC framework.
+API job/session responses omit the internal receipt and upload-job snapshot.
+
+These changes do not repair historical partial imports or promise safe arbitrary concurrent regrouping,
+filesystem mutation, or direct SQL/object-store changes outside the protocol. Deploy the API and
+workers together: mixed application versions that do not share this lock namespace cannot coordinate.
+
+`ingestion-attachments.test.cjs` uses the same explicit `STORAGE_AUTH_TEST_DATABASE_URL` and isolated
+PostgreSQL database pattern as the authorization tests below. It calls the compiled EMLConnector,
+IngestionService and encrypted storage with original colon/trailing-dot/space names in both preservation
+modes, verifies retrieved bytes and same-source deduplication, and injects storage and database-link
+failures before retry, including shared-reference publication. Concurrent independent service instances
+exercise two mailboxes in a merge group, headerless preserve-mode hash deduplication, unrelated-key
+progress, and a one-connection pool. Tests also check compiled deletion against uncommitted publication,
+rollback object counts/winner corruption, source purge versus active/late writers, exact deletion and
+the measured lock budget for many small attachments. Search/queue orchestration is controlled in these
+tests; no external mailbox is contacted.
+Hosted `pnpm test:oss` runs it with the existing PostgreSQL service. Without an explicit local test URL
+it is skipped, not counted as integration proof.
+
+`upload-completion.test.cjs` uses the same isolated PostgreSQL service to exercise duplicate and
+unknown results, partial discovery, last-mailbox release, failures/cancellation, shared and repointed
+inputs, and actual worker/finalizer paths. Its valid-plus-broken ZIP uses a real corrupt ZIP entry;
+the streaming MBOX parser failure and PST folder failure are injected bounded fixtures. No real PST
+import or external mailbox coverage is implied. PST attachment construction refuses an incomplete
+message before it reaches persistence; missing/unreadable attachment-stream cases exercise a healthy
+same-ID retry through the real worker/database path, while absent optional recipient properties remain
+permitted.
 
 ### Backend authorization and HTTP regression checks
 

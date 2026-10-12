@@ -1,4 +1,4 @@
-import { count, desc, eq, asc, and, inArray, ne } from 'drizzle-orm';
+import { count, desc, eq, asc, and, inArray } from 'drizzle-orm';
 import { db } from '../database';
 import {
 	archivedEmails,
@@ -23,6 +23,11 @@ import { User } from '@open-archiver/types';
 import { checkDeletionEnabled } from '../helpers/deletionGuard';
 import { RetentionHook } from '../hooks/RetentionHook';
 import { logger } from '../config/logger';
+import {
+	cleanupUnreferencedObjects,
+	storagePathLockKey,
+	withStorageLocks,
+} from './storage/locking';
 
 interface DbRecipients {
 	to: { name: string; address: string }[];
@@ -283,93 +288,63 @@ export class ArchivedEmailService {
 			throw new Error('Deletion blocked by retention policy (Legal Hold or similar).');
 		}
 
-		const [email] = await db
-			.select()
-			.from(archivedEmails)
-			.where(eq(archivedEmails.id, emailId));
-
-		if (!email) {
-			throw new Error('Archived email not found');
-		}
-
 		const storage = new StorageService();
+		const cleanupPaths = await withStorageLocks<string[]>(
+			[JSON.stringify(['delete-email', emailId])],
+			async (tx) => {
+				const [email] = await tx
+					.select()
+					.from(archivedEmails)
+					.where(eq(archivedEmails.id, emailId));
+				if (!email) throw new Error('Archived email not found');
+				const attachmentsForEmail = await tx
+					.select({
+						attachmentId: attachments.id,
+						storagePath: attachments.storagePath,
+					})
+					.from(emailAttachments)
+					.innerJoin(attachments, eq(emailAttachments.attachmentId, attachments.id))
+					.where(eq(emailAttachments.emailId, emailId));
+				const paths = [
+					email.storagePath,
+					...attachmentsForEmail.map((file) => file.storagePath),
+				];
+				return {
+					keys: paths.map(storagePathLockKey),
+					run: async () => {
+						// Confirm index removal while metadata still exists. Physical cleanup follows commit.
+						const searchService = new SearchService();
+						const task = await searchService.deleteDocuments('emails', [emailId]);
+						await searchService.waitForTask(task.taskUid);
 
-		// Load and handle attachments before deleting the email itself
-		if (email.hasAttachments) {
-			const attachmentsForEmail = await db
-				.select({
-					attachmentId: attachments.id,
-					storagePath: attachments.storagePath,
-				})
-				.from(emailAttachments)
-				.innerJoin(attachments, eq(emailAttachments.attachmentId, attachments.id))
-				.where(eq(emailAttachments.emailId, emailId));
+						for (const attachment of attachmentsForEmail) {
+							await tx
+								.delete(emailAttachments)
+								.where(
+									and(
+										eq(emailAttachments.emailId, emailId),
+										eq(emailAttachments.attachmentId, attachment.attachmentId)
+									)
+								);
 
-			try {
-				for (const attachment of attachmentsForEmail) {
-					// Delete the link between this email and the attachment record.
-					await db
-						.delete(emailAttachments)
-						.where(
-							and(
-								eq(emailAttachments.emailId, emailId),
-								eq(emailAttachments.attachmentId, attachment.attachmentId)
-							)
-						);
+							// Check if any other emails are linked to this attachment record.
+							const [recordRefCount] = await tx
+								.select({ count: count() })
+								.from(emailAttachments)
+								.where(eq(emailAttachments.attachmentId, attachment.attachmentId));
 
-					// Check if any other emails are linked to this attachment record.
-					const [recordRefCount] = await db
-						.select({ count: count() })
-						.from(emailAttachments)
-						.where(eq(emailAttachments.attachmentId, attachment.attachmentId));
-
-					// If no other emails are linked to this record, it's safe to delete it and the file.
-					if (recordRefCount.count === 0) {
-						await storage.delete(attachment.storagePath);
-						await db
-							.delete(attachments)
-							.where(eq(attachments.id, attachment.attachmentId));
-					}
-				}
-			} catch (error) {
-				logger.error(
-					{
-						emailId,
-						error: error instanceof Error ? error.message : String(error),
+							if (recordRefCount.count === 0) {
+								await tx
+									.delete(attachments)
+									.where(eq(attachments.id, attachment.attachmentId));
+							}
+						}
+						await tx.delete(archivedEmails).where(eq(archivedEmails.id, emailId));
+						return paths;
 					},
-					'Failed to delete email attachments'
-				);
-				throw new Error('Failed to delete email attachments');
+				};
 			}
-		}
-
-		// Only delete the physical EML file if no other archived_emails row shares
-		// the same storagePath. Multiple rows can point to the same file when
-		// per-mailbox archiving creates shared-file reference rows.
-		const [emlRefCount] = await db
-			.select({ count: count() })
-			.from(archivedEmails)
-			.where(
-				and(
-					eq(archivedEmails.storagePath, email.storagePath),
-					ne(archivedEmails.id, emailId)
-				)
-			);
-
-		if (emlRefCount.count === 0) {
-			await storage.delete(email.storagePath);
-		}
-
-		// Confirmed before the row goes, rather than only enqueued. Once the row is deleted nothing
-		// can rebuild this document or even name it, so a delete task that fails afterwards strands
-		// it in the index and search offers a result that cannot be opened (#446). Throwing here
-		// leaves the email intact and the operation repeatable.
-		const searchService = new SearchService();
-		const deletionTask = await searchService.deleteDocuments('emails', [emailId]);
-		await searchService.waitForTask(deletionTask.taskUid);
-
-		await db.delete(archivedEmails).where(eq(archivedEmails.id, emailId));
-
+		);
 		// Build audit details: system-initiated deletions carry retention context
 		// for GoBD compliance; manual deletions record only the reason.
 		const auditDetails: Record<string, unknown> = {
@@ -387,5 +362,11 @@ export class ArchivedEmailService {
 			actorIp,
 			details: auditDetails,
 		});
+		try {
+			await cleanupUnreferencedObjects(storage, cleanupPaths);
+		} catch (error) {
+			logger.error({ emailId, error }, 'Email metadata deleted but storage cleanup failed');
+			throw error;
+		}
 	}
 }
