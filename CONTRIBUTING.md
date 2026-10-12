@@ -241,6 +241,150 @@ storage, indexing, deduplication, and matching database/archive restore evidence
 Preserve-original mode intentionally stores attachments inside the raw EML without separate
 attachment rows. No PST import coverage is implied by these synthetic EML/ZIP fixtures.
 
+### Mail-composer and IMAP dependency regressions
+
+The backend pins Nodemailer 10.0.14 and ImapFlow 2.3.0 for
+[issue #124](https://github.com/DevSecNinja/OpenArchiver/issues/124). Their registry publication
+times are `2026-10-03T13:45:29.976Z` and `2026-10-08T14:12:31.660Z`, respectively.
+Both met pnpm's unchanged 1440-minute (24-hour) installation floor during validation:
+`pnpm-workspace.yaml` sets `minimumReleaseAgeStrict: true` without an explicit duration.
+Separately, `renovate.json` sets `"minimumReleaseAge": "3 days"`, the repository's 72-hour
+adoption gate. Nodemailer met both thresholds; ImapFlow did not yet meet the adoption gate
+during the morning validation on 2026-10-11. It reached 72 elapsed hours at
+`2026-10-11T14:12:31.660Z` (16:12:31.660 CEST), not at a calendar-day boundary.
+At resumption on `2026-10-11T16:01:51.183Z`, all 26 resolved packages in the two updated
+parents' dependency closure met 72 hours, including all seven newly added lockfile resolutions.
+Their registry integrity values matched the lockfile; no dependency or test bytes changed.
+The morning test results remain historical evidence, not a new execution after the age gate.
+Successful installation or age eligibility alone is not adoption or publication approval.
+At selection before 07:00 UTC, Nodemailer 10.1.0 and ImapFlow 2.4.0 were still inside
+pnpm's one-day floor. These are intentionally exact parent versions, not overrides or
+release-age exceptions.
+
+Nodemailer 10.0.14 contains the address-list accumulation fix
+[GHSA-2x7j-588g-ccc2](https://github.com/advisories/GHSA-2x7j-588g-ccc2) (fixed in 9.1.0)
+and free-text fallback fix
+[GHSA-v53p-9fqp-m79j](https://github.com/advisories/GHSA-v53p-9fqp-m79j) (fixed in 10.0.6).
+The direct dependency and mailparser now resolve to the same fixed copy.
+
+ImapFlow 1.0.191 imported its separate Nodemailer 7.0.5 copy only from
+`lib/proxy-connection.js`, for the HTTP/HTTPS CONNECT proxy client. ImapConnector supplies no
+proxy option; its LIST/FETCH envelope parsing is not the Nodemailer address-parser path.
+ImapFlow 2.3.0 removes that dependency through a supported parent update. Its v2 migration
+requires Node.js 20+ and publishes CJS/ESM through an export map; our Node.js 22 build uses the
+package-root API and needs no connector or declaration shim. Package presence alone did not
+establish SMTP, OAuth/TLS, raw-option SSRF, or address-parser exploitation through ImapFlow.
+
+After a frozen install and OSS build, run:
+
+```sh
+pnpm --filter @open-archiver/backend exec node --test --test-concurrency=1 --test-timeout=30000 test/mail-composer.test.cjs
+```
+
+This suite is also discovered by `pnpm test:oss`. It runs the real compiled
+`stripAttachmentsFromEml` with 4/8/16/32 recipients and messages smaller than 4 KiB. In-memory
+counters precede the original installed accumulator operation, and a delegating `compile`
+hook isolates composer work from mailparser's initial parse. Neither the helper nor dependency
+files are rewritten. The linear-work assertion fails on 8.0.2 with 10/36/136/528 logical element
+copies and passes on 10.0.14 with 4/8/16/32 appends; repeated runs must agree. This is not a
+timed denial-of-service, CPU-instruction measurement, or free-text fallback reproduction.
+
+Additional checks preserve ordinary/encoded From, To, Cc and Reply-To, threading/custom headers,
+text/HTML, inline bytes and the byte-identical no-attachment/inline-only shortcuts. An isolated,
+unmodified compiled IngestionService runs both preservation branches with real encrypted local
+storage and retrieval, but synthetic database results and inert eager infrastructure. It checks
+separate attachment bytes/links in default mode and original MIME with no separate attachment
+rows or composer call in preserve-original mode. It does not cover database deduplication,
+collisions, retries, indexing, or the separate filename/retry repair.
+
+The offline IMAP check constructs the actual client and parses synthetic source through the
+compiled connector in both modes without connecting. The separate Dovecot fixture below adds
+one-server protocol coverage, not live-provider, OAuth or proxy validation. Keep source/test
+results and resolved dependency advisory inventory separate from full-runtime and image
+scan evidence; this change does not approve deployment or claim a zero-vulnerability artifact.
+
+#### Opt-in Dovecot interoperability fixture
+
+`packages/backend/test/integration/run-imap-interop.sh` is an opt-in real-server
+fixture, run separately from the composer regressions. A source build alone is not
+interoperability evidence; the dated hosted result is recorded below.
+The first local preparation stopped before dependency installation because effective kernel
+resource limits could not be verified. No local interoperability success is claimed.
+The OSS workflow therefore includes one bounded hosted-Linux step that reuses its existing
+compiled build and runs the fixture explicitly. The first hosted attempt on `079b15ad` verified
+the kernel limits but failed before protocol testing: the standard Dovecot image's `imap-login` and `anvil`
+file capabilities caused `execv` to fail with `EPERM` under the required restrictions.
+It requires a prebuilt Linux amd64 workspace, Docker or Podman with effective cgroup-v2
+limits, and existing Bash and `timeout` tools. Certificate generation uses the existing
+OpenSSL in the same pinned Dovecot image, not a host tool installation. It does not install
+dependencies or build images. Network preparation is explicit and separate from the isolated
+protocol run:
+
+```sh
+bash packages/backend/test/integration/run-imap-interop.sh prepare
+bash packages/backend/test/integration/run-imap-interop.sh run
+# Use CONTAINER_ENGINE=podman for either command when appropriate.
+```
+
+The runner pins the official Dovecot 2.4.4 `-root` packaging variant to manifest
+`sha256:d6b2f80db2e656a9250583712a82397e2752b35ad7e4e2e71c85fdc0d510137d`
+and reuses the existing frontend fixture's pinned Node 22 image. On 2026-10-11, registry
+manifest/config hashes were verified without pulling layers; the Dovecot tag was last pushed
+on 2026-06-03 and the Node tag on 2026-10-06, both beyond the 72-hour gate. The choice follows
+[ImapFlow's Dovecot integration fixture](https://github.com/postalsys/imapflow/tree/v2.3.0/test/integration),
+but does **not** copy its certificate-verification bypass or plaintext-auth override.
+The variant omits the layer that adds executable file capabilities; this is a packaging
+choice, **not root execution**. Every helper/server/client is explicitly UID/GID 1000:1000.
+Fixture configuration uses the documented `vmail` users, unprivileged ports and no-chroot
+login mode. The runner checks actual UID/GID, zero effective capabilities and
+`NoNewPrivs=1`, plus absence of file capabilities on `imap-login`/`anvil`, before protocol
+testing. It does not add capabilities, alter executable xattrs, copy binaries or build an
+image.
+
+Each run generates an owned, short-lived CA and server certificate with localhost/IP SANs
+in a network-disabled, capped certificate helper that exits and is removed before the server
+and client start; the temporary CA private key is then deleted.
+Only the client test processes trust that CA, via `NODE_EXTRA_CA_CERTS`; production TLS
+configuration is untouched. The server requires TLS. The server and client each have a
+256 MiB memory/no-swap ceiling, one CPU and 128 PIDs; the runner verifies effective controls,
+uses read-only filesystems with small temporary writable paths, and fails rather than
+relaxing unavailable controls. They share a network-disabled namespace using loopback,
+with no host ports. Readiness, test execution and cleanup have explicit deadlines. CI caps
+the entire preparation/protocol step at ten minutes; certificate and test output are limited
+to their final 16 KiB and 64 KiB respectively, without discarding failure exit codes.
+
+The opt-in test drives the actual compiled ImapConnector and installed ImapFlow through
+implicit TLS and STARTTLS, authentication, LIST/select, both passes of UID-based fetching,
+MIME/attachment reads in both preservation modes, cursor resume, logout and early iterator
+return. It separately exercises explicit SEARCH on the connector-owned client, since the
+production UID-only criterion can optimize away SEARCH. Wrong-password and untrusted-CA
+cases must reject and close. Messages and credentials are synthetic; no OAuth, proxy, live
+provider account, real ingestion database or production archive is involved. Ordinary
+`pnpm test:oss` discovery skips this test unless the isolated runner opts in. Passing one
+Dovecot fixture is not multi-provider, full-ingestion, concurrency or deployment clearance.
+
+On 2026-10-11, [hosted run 38158044423](https://github.com/DevSecNinja/OpenArchiver/actions/runs/38158044423)
+on `b77c70375d4b0abcf9c03b1ff4f390d0f34e7563` passed all nine tests (eight subcases and their
+parent), with zero failures, skips or cancellations. Both TLS transports and preservation
+modes passed the full positive cases, including raw MIME/hash, parsed HTML/data-URI decoded
+bytes, attachments, cursor resume and early-return/logout checks. Wrong-password and
+untrusted-CA rejection/cleanup passed for both transports. The run verified the effective
+resource, UID/GID, zero-capability, no-new-privileges, no-file-capability and network controls
+before protocol testing.
+
+The earlier failures remain distinct evidence: `079b15ad` failed at executable file
+capabilities, `31c9567b` at missing test-only storage bootstrap configuration, and `6d56ed34`
+at an incorrect CID-only expectation for parsed HTML. The pinned parser converts CID links
+to data URIs by default while the fetched raw MIME remains byte-identical. These fixture
+issues were corrected without relaxing safety controls or removing coverage; none was
+waived. The same successful workflow passed 51 backend tests (with the opt-in test skipped
+in ordinary discovery and then run explicitly), all 16 production frontend tests, and
+frontend checking with zero errors and 44 existing warnings. This does not establish real
+ingestion database concurrency, provider interoperability, restoration or production-image safety.
+These dated results predate the merge of `ae039299`, which removed the unused SQLite driver
+and landed SDK/localization updates. The refresh preserves the mail pins and Dovecot fixture;
+fresh hosted checks must establish their behavior together with the landed main changes.
+
 ### Archive path constraints
 
 ZIP entry names and connector folder paths must be relative, slash-separated paths without empty,
