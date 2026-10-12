@@ -28,8 +28,9 @@
 		"lint": "prettier --check ."
 	},
 	"dependencies": {
-		"concurrently": "^9.2.0",
-		"dotenv-cli": "8.0.0"
+		"concurrently": "10.0.6",
+		"dotenv-cli": "8.0.0",
+		"supports-color": "8.1.1"
 	},
 	"devDependencies": {
 		"cross-env": "^10.0.0",

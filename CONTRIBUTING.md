@@ -107,6 +107,66 @@ When changing this toolchain, run `pnpm --filter @open-archiver/backend update x
 twice, checking that the recorded checksum survives each operation and that no unrelated dependency
 resolutions or integrity values change, then repeat the frozen install and OSS source build.
 
+### Supervisor dependency regressions
+
+The root dependency pins `concurrently` 10.0.6, which declares exact `shell-quote` 1.12.0.
+The supervisor was published at `2026-10-08T12:53:46.263Z` and passed the fork's three-day
+new-release gate at `2026-10-11T12:53:46.263Z`. Its update must use the pinned pnpm with the
+committed install policy unchanged, and independently check publication times for every new
+resolution against that three-day gate. Do not add release-age exclusions or update unrelated
+locked dependencies.
+
+The direct root `supports-color` 8.1.1 dependency is a compatibility anchor, not an application
+feature. Without it, pnpm promotes the supervisor's new ESM `supports-color` 10.2.2 to the shared
+optional peer for unrelated CommonJS `debug` consumers across the backend and frontend.
+The explicit dependency preserves their existing 8.1.1 peer snapshots; concurrently retains its
+own exact 10.2.2 dependency. The regression suite checks actual CommonJS `debug` loading and
+both installed color versions. Do not remove the anchor without reviewing that peer graph.
+
+Version 10 is ESM-only. Although concurrently declares Node.js 22 or newer, its yargs 18
+dependency requires at least 22.12.0 on Node.js 22. The root engine uses
+`^22.13.0 || >=24.0.0` to also satisfy the existing `vitepress-openapi` documentation tooling,
+which requires the stricter 22.13.0 floor on Node.js 22 and excludes Node.js 23.
+Application scripts invoke its CLI,
+not the removed programmatic `killOthers` option, and do not use the removed `--name-separator`
+flag. The existing `--names`, `--restart-tries` and `--restart-after` CLI options remain supported,
+as do `--kill-others` and `--success all`. Default prefix colors now auto-select. Resolve the
+executable from the installed `concurrently/package.json` `bin.concurrently` field: version 10
+uses `dist/bin/index.js`, not the old `dist/bin/concurrently.js`.
+
+After an explicit frozen install, run the focused checks in Linux on a supported Node.js 22.x
+or 24+ release:
+
+```sh
+node --test packages/backend/test/supervisor-dependency.test.cjs
+```
+
+`pnpm test:oss` also discovers this suite. It checks the installed ESM entry point and dependency
+versions and verifies the declared engine range against installed dependency requirements,
+including rejection of Node.js 22.12 and 23 and acceptance of 22.13 and 24. These are semver
+metadata assertions, not execution on each Node.js version. It then uses synthetic children
+to exercise CLI names, quoted arguments, indexing heap
+defaults/overrides, fatal and successful child exits, signal forwarding, graceful sibling exit,
+and absence of respawn. These process checks can run without networking as a non-root user with
+a read-only filesystem and writable `/tmp`. On Windows, the POSIX process checks are explicitly
+skipped; the installed-package check still runs.
+
+This is a supervisor compatibility fixture, **not execution of the production OSS command**.
+The current `docker-start:oss` still nests supervisors and `start:workers` requests infinite
+restarts. The current entrypoint also installs dependencies at startup. Their separate runtime
+hardening work must land before claiming default-command non-root/read-only startup, fatal-child
+container termination, or no worker respawn. Validate the exact merged production image, including
+PostgreSQL/application readiness and the SQLite dependency-absence checks below, before closing
+[issue #113](https://github.com/DevSecNinja/OpenArchiver/issues/113).
+
+The `shell-quote` advisory
+[GHSA-pqg4-j6r4-53mv](https://github.com/advisories/GHSA-pqg4-j6r4-53mv) requires a comment object and
+an attacker-controlled line terminator in the same `quote()` input. The reviewed OSS scripts use
+fixed/operator-controlled commands, no passthrough flag and no argument placeholders. The CLI
+argument-expansion path supplies strings rather than parsed comment objects. That source trace
+does not establish arbitrary API/operator input safety or a vulnerability-free image; retain
+installed-artifact and residual scan evidence separately.
+
 ### PostgreSQL storage and SQLite dependency-absence checks
 
 After the clean frozen install and OSS build above, run on Linux with Node.js 22.13+:
