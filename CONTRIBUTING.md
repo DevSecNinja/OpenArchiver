@@ -287,6 +287,9 @@ not proof of success, and is not replayed. A missing receipt for a still-current
 as unknown, with its input and source state retained until existing sessionless recovery makes it
 retryable. Master error publication repeats claim-epoch and sibling-session guards under lock so a
 newer same-key claim cannot be overwritten between compensation and the catch handler.
+For a dispatched session, retryable error additionally requires a valid matching receipt with a
+durably committed abort flag; a failed compensation write cannot admit overlapping work. Discovery
+failure before any session exists keeps its separate guarded recovery path.
 
 Each new receipt explicitly owns its original credential claim. Releasing that claim and clearing
 matching credentials commit atomically before physical cleanup. Later cleanup retries never clear
@@ -294,6 +297,8 @@ credentials again: any same-key reselection, including an `auth_success` claim w
 remains a live reference. Missing claim-phase metadata is not release proof. Finalizer status,
 message and timestamp updates also recheck the source's claim start time and session identity under
 the lock, so an older failed receipt may retire without overwriting a newer same-input retry.
+An `auth_success` selection is already a pending new claim even before its new master or session
+exists; an old owned receipt may neither publish status over it nor clear its matching credentials.
 
 POSIX single-letter colon names such as `a:report.eml` and `a:folder` remain literal relative paths
 through ZIP validation, source-path composition and local storage. Windows-only colon checks still

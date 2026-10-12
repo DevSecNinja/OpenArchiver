@@ -78,10 +78,13 @@ test(
 			),
 		});
 		let dispatch;
+		const scheduled = [];
 		provide('../dist/jobs/queues', {
 			ingestionQueue: {
 				addBulk: (jobs) => dispatch(jobs),
-				add: async () => {},
+				add: async (name, data) => {
+					scheduled.push({ name, data });
+				},
 				getJobs: async () => [],
 				getJob: async () => null,
 			},
@@ -169,6 +172,179 @@ test(
 
 		for (const mode of ['initial', 'continuous']) {
 			const master = mode === 'initial' ? initial : continuous;
+			await t.test(
+				`${mode}: abort persistence failure cannot make live dispatch retryable`,
+				async (t) => {
+					const ctx = await seed(mode);
+					t.after(async () => {
+						await db
+							.delete(schema.ingestionSources)
+							.where(eq(schema.ingestionSources.id, ctx.source.id));
+					});
+					let jobs;
+					let before;
+					dispatch = async (batch) => {
+						jobs = batch;
+						await processMailboxProcessor(batch[0]);
+						before = await sourceRow(ctx.source.id);
+						throw new Error('Synthetic partially enqueued dispatch failure');
+					};
+					await client`CREATE FUNCTION reject_dispatch_abort() RETURNS trigger LANGUAGE plpgsql AS $$
+				BEGIN IF NEW.upload_receipt->>'dispatchAborted' = 'true' THEN
+					RAISE EXCEPTION 'Synthetic abort persistence failure'; END IF; RETURN NEW; END $$`;
+					await client`CREATE TRIGGER reject_dispatch_abort BEFORE UPDATE ON sync_sessions
+				FOR EACH ROW EXECUTE FUNCTION reject_dispatch_abort()`;
+					try {
+						await master({ data: { ingestionSourceId: ctx.source.id } });
+					} finally {
+						await client`DROP TRIGGER reject_dispatch_abort ON sync_sessions`;
+						await client`DROP FUNCTION reject_dispatch_abort()`;
+					}
+					assert.deepEqual(await sourceRow(ctx.source.id), before);
+					const [live] = await sessionsFor(ctx.source.id);
+					assert.equal(live.uploadReceipt.dispatchAborted, undefined);
+					assert.equal(live.completedMailboxes, 1);
+					assert.equal(
+						await SyncSessionService.uploadInputForMailbox(live.id, {
+							sourceId: ctx.source.id,
+							inputPath: ctx.inputPath,
+							mailbox: mailboxes[1],
+						}),
+						true
+					);
+					assert.equal(await IngestionService.claimForImport(ctx.source.id), null);
+					assert.equal(await IngestionService.claimForSync(ctx.source.id), null);
+					assert.deepEqual(await buffer(await storage.get(ctx.inputPath)), ctx.bytes);
+					assert.equal(
+						await SyncSessionService.abortUploadDispatch(
+							live.id,
+							ctx.source.id,
+							ctx.inputPath,
+							before.lastSyncStartedAt
+						),
+						'aborted'
+					);
+					assert.equal(
+						await IngestionService.markUploadDispatchFailed(
+							ctx.source.id,
+							ctx.inputPath,
+							before.lastSyncStartedAt,
+							live.id,
+							{ lastSyncStatusMessage: 'Durably aborted dispatch can retry' }
+						),
+						true
+					);
+					await processMailboxProcessor(jobs[1]);
+					assert.equal((await sessionsFor(ctx.source.id))[0].completedMailboxes, 1);
+					dispatch = complete;
+					await master({ data: { ingestionSourceId: ctx.source.id } });
+					assert.equal((await sourceRow(ctx.source.id)).status, 'imported');
+					assert.equal(await storage.exists(ctx.inputPath), false);
+				}
+			);
+
+			await t.test(
+				`${mode}: discovery failure without a session remains retryable`,
+				async (t) => {
+					const ctx = await seed(mode);
+					t.after(async () => {
+						await db
+							.delete(schema.ingestionSources)
+							.where(eq(schema.ingestionSources.id, ctx.source.id));
+					});
+					const original = makeConnector;
+					makeConnector = () => ({
+						async *listAllUsers() {
+							throw new Error('Synthetic discovery failure');
+						},
+					});
+					try {
+						await assert.rejects(
+							master({ data: { ingestionSourceId: ctx.source.id } }),
+							/discovery failure/
+						);
+					} finally {
+						makeConnector = original;
+					}
+					assert.equal((await sourceRow(ctx.source.id)).status, 'error');
+					assert.equal((await sessionsFor(ctx.source.id)).length, 0);
+					assert.ok(await storage.exists(ctx.inputPath));
+					dispatch = complete;
+					await master({ data: { ingestionSourceId: ctx.source.id } });
+					assert.equal((await sourceRow(ctx.source.id)).status, 'imported');
+					assert.equal(await storage.exists(ctx.inputPath), false);
+				}
+			);
+
+			for (const action of ['release', 'finalize']) {
+				await t.test(
+					`${mode}: auth_success reselection fences old owned ${action}`,
+					async (t) => {
+						const ctx = await seed(mode);
+						t.after(async () => {
+							await db
+								.delete(schema.ingestionSources)
+								.where(eq(schema.ingestionSources.id, ctx.source.id));
+						});
+						let jobs;
+						dispatch = async (batch) => {
+							jobs = batch;
+						};
+						await master({ data: { ingestionSourceId: ctx.source.id } });
+						for (const job of jobs) await processMailboxProcessor(job);
+						const [old] = await sessionsFor(ctx.source.id);
+						assert.equal(old.uploadReceipt.inputClaim, 'owned');
+						assert.equal(old.uploadReceipt.disposition, undefined);
+						await IngestionService.update(ctx.source.id, {
+							providerConfig: {
+								type: 'eml_import',
+								uploadedFilePath: ctx.inputPath,
+								uploadedFileName: 'Selected again.zip',
+							},
+						});
+						const selected = await IngestionService.findById(ctx.source.id);
+						assert.equal(
+							await new EMLConnector(selected.credentials).testConnection(),
+							true
+						);
+						await IngestionService.update(ctx.source.id, { status: 'auth_success' });
+						assert.ok(
+							scheduled.some(
+								(job) =>
+									job.name === 'initial-import' &&
+									job.data.ingestionSourceId === ctx.source.id
+							)
+						);
+						const before = await sourceRow(ctx.source.id);
+						assert.deepEqual(before.lastSyncStartedAt, selected.lastSyncStartedAt);
+						assert.equal((await sessionsFor(ctx.source.id)).length, 1);
+						if (action === 'release') {
+							assert.equal(
+								await IngestionService.releaseCompletedUpload(old.id),
+								false
+							);
+						} else {
+							await finish({ data: { ...jobs[0].data, isInitialImport: true } });
+						}
+						assert.deepEqual(await sourceRow(ctx.source.id), before);
+						assert.deepEqual(await buffer(await storage.get(ctx.inputPath)), ctx.bytes);
+						assert.equal(
+							(await sessionsFor(ctx.source.id))[0].uploadReceipt.inputClaim,
+							'owned'
+						);
+						dispatch = async (batch) => {
+							for (const job of batch) await processMailboxProcessor(job);
+							await finish({ data: { ...batch[0].data, isInitialImport: true } });
+						};
+						await initial({ data: { ingestionSourceId: ctx.source.id } });
+						assert.equal((await sourceRow(ctx.source.id)).status, 'imported');
+						assert.equal(await storage.exists(ctx.inputPath), false);
+						await finish({ data: { ...jobs[0].data, isInitialImport: true } });
+						assert.equal((await sessionsFor(ctx.source.id)).length, 0);
+					}
+				);
+			}
+
 			for (const state of [
 				'finalized',
 				'purged',
@@ -326,5 +502,68 @@ test(
 				);
 			}
 		}
+
+		await t.test(
+			'retryability refuses malformed, mismatched or non-aborted receipts',
+			async (t) => {
+				const ctx = await seed('initial');
+				t.after(async () => {
+					await db
+						.delete(schema.ingestionSources)
+						.where(eq(schema.ingestionSources.id, ctx.source.id));
+				});
+				const claimed = await IngestionService.claimForImport(ctx.source.id);
+				const id = await SyncSessionService.create(ctx.source.id, 2, true, {
+					inputPath: ctx.inputPath,
+					expectedMailboxes: mailboxes,
+				});
+				const [row] = await sessionsFor(ctx.source.id);
+				const aborted = { ...row.uploadReceipt, dispatchAborted: true };
+				const before = await sourceRow(ctx.source.id);
+				for (const receipt of [
+					null,
+					{},
+					row.uploadReceipt,
+					{ ...aborted, sourceId: randomUUID() },
+					{ ...aborted, inputPath: 'other-input.zip' },
+					{ ...aborted, expectedMailboxes: [mailboxes[0]] },
+					{ ...aborted, discoveryClosed: false },
+					{ ...aborted, inputClaim: 'released' },
+					{ ...aborted, disposition: 'handled' },
+				]) {
+					await db
+						.update(schema.syncSessions)
+						.set({ uploadReceipt: receipt })
+						.where(eq(schema.syncSessions.id, id));
+					assert.equal(
+						await IngestionService.markUploadDispatchFailed(
+							ctx.source.id,
+							ctx.inputPath,
+							claimed.lastSyncStartedAt,
+							id,
+							{ lastSyncStatusMessage: 'Must not be published' }
+						),
+						false
+					);
+					assert.deepEqual(await sourceRow(ctx.source.id), before);
+				}
+				await db
+					.update(schema.syncSessions)
+					.set({ uploadReceipt: aborted })
+					.where(eq(schema.syncSessions.id, id));
+				assert.equal(
+					await IngestionService.markUploadDispatchFailed(
+						ctx.source.id,
+						ctx.inputPath,
+						claimed.lastSyncStartedAt,
+						id,
+						{ lastSyncStatusMessage: 'Verified current aborted dispatch' }
+					),
+					true
+				);
+				assert.equal((await sourceRow(ctx.source.id)).status, 'error');
+				assert.ok(await storage.exists(ctx.inputPath));
+			}
+		);
 	}
 );

@@ -272,7 +272,10 @@ export class IngestionService {
 					receipt.inputClaim === 'owned' &&
 					matchesCurrentInput &&
 					!hasNewerUploadClaim(current, source.lastSyncStartedAt, sessions);
-				if (ownsCurrentClaim && (source.status === 'paused' || source.status === 'error')) {
+				if (
+					ownsCurrentClaim &&
+					['paused', 'error', 'auth_success'].includes(source.status)
+				) {
 					return { keys: [], run: async () => false };
 				}
 				const otherInputNeeded = sessions.some((row) => {
@@ -365,6 +368,7 @@ export class IngestionService {
 				.where(eq(syncSessions.ingestionSourceId, id))
 				.for('update');
 			const current = sessions.find((row) => row.id === sessionId);
+			const receipt = readUploadReceipt(current?.uploadReceipt);
 			const credentials = source ? this.decryptSource(source)?.credentials : null;
 			const ownsClaim = Boolean(
 				source &&
@@ -373,8 +377,15 @@ export class IngestionService {
 					source.lastSyncStartedAt?.getTime() === claimStartedAt.getTime() &&
 					uploadedInputPath(credentials) === inputPath &&
 					['importing', 'syncing'].includes(source.status) &&
-					(sessionId
+					(sessionId !== undefined
 						? current &&
+							receipt &&
+							receipt.sourceId === id &&
+							receipt.inputPath === inputPath &&
+							receipt.expectedMailboxes.length === current.totalMailboxes &&
+							receipt.inputClaim === 'owned' &&
+							receipt.dispatchAborted === true &&
+							receipt.disposition !== 'handled' &&
 							!hasNewerUploadClaim(current, source.lastSyncStartedAt, sessions)
 						: !sessions.some((row) => row.createdAt >= claimStartedAt))
 			);
@@ -672,6 +683,7 @@ export class IngestionService {
 					)
 						throw new Error('Upload receipt changed before status publication');
 					preserveCurrentClaim =
+						fresh.status === 'auth_success' ||
 						receipt.inputClaim !== 'owned' ||
 						hasNewerUploadClaim(session, fresh.lastSyncStartedAt, sessions);
 				}
