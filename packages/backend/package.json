@@ -82,7 +82,7 @@
 		"@types/express": "^5.0.3",
 		"@types/mailparser": "^3.4.6",
 		"@types/microsoft-graph": "^2.40.1",
-		"@types/multer": "^2.0.0",
+		"@types/multer": "^2.3.0",
 		"@types/node": "^24.0.12",
 		"@types/nodemailer": "^7.0.11",
 		"@types/qrcode": "^1.5.6",
