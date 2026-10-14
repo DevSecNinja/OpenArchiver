@@ -316,8 +316,8 @@ importers:
         specifier: ^2.4.0
         version: 2.4.0
       nodemailer:
-        specifier: ^8.0.2
-        version: 8.0.2
+        specifier: ^8.0.11
+        version: 8.0.11
       otplib:
         specifier: ^13.4.0
         version: 13.5.0
@@ -383,8 +383,8 @@ importers:
         specifier: ^24.0.12
         version: 24.0.13
       '@types/nodemailer':
-        specifier: ^7.0.11
-        version: 7.0.11
+        specifier: ^8.0.2
+        version: 8.0.2
       '@types/qrcode':
         specifier: ^1.5.6
         version: 1.5.6
@@ -1974,8 +1974,8 @@ packages:
   '@types/node@24.0.13':
     resolution: {integrity: sha512-Qm9OYVOFHFYg3wJoTSrz80hoec5Lia/dPp84do3X7dZvLikQvM1YpmvTBEdIr/e+U8HTkFjLHLnl78K/qjf+jQ==}
 
-  '@types/nodemailer@7.0.11':
-    resolution: {integrity: sha512-E+U4RzR2dKrx+u3N4DlsmLaDC6mMZOM/TPROxA0UAPiTgI0y4CEFBmZE+coGWTjakDriRsXG368lNk1u9Q0a2g==}
+  '@types/nodemailer@8.0.2':
+    resolution: {integrity: sha512-c7M5ox8p0nEOfbJ2E9Qcmt8/QCu/VzsiAhzBiZbvky2PhKZDHpKB3sQHBM5MEZNkCfBOaS6S9//AGPRTNB7IaA==}
 
   '@types/qrcode@1.5.6':
     resolution: {integrity: sha512-te7NQcV2BOvdj2b1hCAHzAoMNuj65kNBMz0KBaxM6c3VGBOhU0dURQKOtH8CFNI/dsKkwlv32p26qYQTWoB5bw==}
@@ -3724,8 +3724,8 @@ packages:
     resolution: {integrity: sha512-nsrh2lO3j4GkLLXoeEksAMgAOqxOv6QumNRVQTJwKH4nuiww6iC2y7GyANs9kRAxCexg3+lTWM3PZ91iLlVjfg==}
     engines: {node: '>=6.0.0'}
 
-  nodemailer@8.0.2:
-    resolution: {integrity: sha512-zbj002pZAIkWQFxyAaqoxvn+zoIwRnS40hgjqTXudKOOJkiFFgBeNqjgD3/YCR12sZnrghWYBY+yP1ZucdDRpw==}
+  nodemailer@8.0.11:
+    resolution: {integrity: sha512-nrO/pDAUKl+wXX+lx16tDLbnm0fW6sK/x8mgohaCpg+CdCEl482bD4tCuAZk2DyliruiNTIZxRCoWkDqJEnAiA==}
     engines: {node: '>=6.0.0'}
 
   normalize-path@3.0.0:
@@ -6141,7 +6141,7 @@ snapshots:
     dependencies:
       undici-types: 7.8.0
 
-  '@types/nodemailer@7.0.11':
+  '@types/nodemailer@8.0.2':
     dependencies:
       '@types/node': 24.0.13
 
@@ -7936,7 +7936,7 @@ snapshots:
 
   nodemailer@7.0.5: {}
 
-  nodemailer@8.0.2: {}
+  nodemailer@8.0.11: {}
 
   normalize-path@3.0.0: {}
 
