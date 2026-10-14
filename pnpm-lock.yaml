@@ -440,8 +440,8 @@ importers:
         specifier: ^2.4.4
         version: 2.4.4
       semver:
-        specifier: ^7.7.2
-        version: 7.7.2
+        specifier: ^7.8.5
+        version: 7.8.5
       svelte-persisted-store:
         specifier: ^0.12.0
         version: 0.12.0(svelte@5.57.2)
@@ -480,8 +480,8 @@ importers:
         specifier: ^3.1.7
         version: 3.1.7
       '@types/semver':
-        specifier: ^7.7.1
-        version: 7.7.1
+        specifier: ^7.8.0
+        version: 7.8.0
       bits-ui:
         specifier: ^2.12.0
         version: 2.12.0(@internationalized/date@3.8.2)(@sveltejs/kit@2.70.3(@sveltejs/vite-plugin-svelte@5.1.1(supports-color@8.1.1)(svelte@5.57.2)(vite@6.4.4(@types/node@24.0.13)(jiti@2.4.2)(lightningcss@1.30.1)))(svelte@5.57.2)(typescript@5.8.3)(vite@6.4.4(@types/node@24.0.13)(jiti@2.4.2)(lightningcss@1.30.1)))(svelte@5.57.2)
@@ -1992,8 +1992,8 @@ packages:
   '@types/resolve@1.20.2':
     resolution: {integrity: sha512-60BCwRFOZCQhDncwQdxxeOEEkbc5dIMccYLwbxsS4TUNeVECQ/pBJ0j09mrHOl/JJvpRPGwO9SvE4nR2Nb/a4Q==}
 
-  '@types/semver@7.7.1':
-    resolution: {integrity: sha512-FmgJfu+MOcQ370SD0ev7EI8TlCAfKYU+B4m5T3yXc1CiRN94g/SZPtsCkk506aUDtlMnFZvasDwHHUcZUEaYuA==}
+  '@types/semver@7.8.0':
+    resolution: {integrity: sha512-1mAINjtQCXXeLkJ9ehXkwOcBpqtLxiVtKhpUf83DdRNdQKV0iXZpaHYqRr7nj+wvxuJzoAmAwXI+sCNMv1CzLQ==}
 
   '@types/send@0.17.5':
     resolution: {integrity: sha512-z6F2D3cOStZvuk2SaP6YrwkNO65iTZcwA2ZkSABegdkAh/lf+Aa/YQndZVfmEXT5vgAp6zv06VQ3ejSVjAny4w==}
@@ -4200,6 +4200,11 @@ packages:
     engines: {node: '>=10'}
     hasBin: true
 
+  semver@7.8.5:
+    resolution: {integrity: sha512-Y7/KDsb8LjooZpwaqGyulO6DQlksgCncchHGk+sZIY4SBvUocMBEFH5Ur1fI4dV+Jvl0w6cjvucaIi40puRioA==}
+    engines: {node: '>=10'}
+    hasBin: true
+
   send@1.2.0:
     resolution: {integrity: sha512-uaW0WwXKpL9blXE2o0bRhoL2EGXIrZxQ2ZQ4mgcfoBxdFmQold+qWsD2jLrfZ0trjKL6vOw0j//eAwcALFjKSw==}
     engines: {node: '>= 18'}
@@ -6159,7 +6164,7 @@ snapshots:
 
   '@types/resolve@1.20.2': {}
 
-  '@types/semver@7.7.1': {}
+  '@types/semver@7.8.0': {}
 
   '@types/send@0.17.5':
     dependencies:
@@ -8396,6 +8401,8 @@ snapshots:
       parseley: 0.13.1
 
   semver@7.7.2: {}
+
+  semver@7.8.5: {}
 
   send@1.2.0(supports-color@8.1.1):
     dependencies:
