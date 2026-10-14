@@ -47,7 +47,7 @@
 		"mode-watcher": "^1.1.0",
 		"svelte": "^5.57.2",
 		"svelte-check": "^4.0.0",
-		"svelte-sonner": "^1.0.5",
+		"svelte-sonner": "^1.2.1",
 		"tailwindcss": "^4.0.0",
 		"tw-animate-css": "^1.3.5",
 		"typescript": "^5.0.0",
