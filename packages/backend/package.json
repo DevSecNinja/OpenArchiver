@@ -50,7 +50,7 @@
 		"express-validator": "^7.3.2",
 		"google-auth-library": "^10.1.0",
 		"googleapis": "^152.0.0",
-		"i18next": "^25.4.2",
+		"i18next": "^25.10.10",
 		"i18next-fs-backend": "^2.6.8",
 		"i18next-http-middleware": "^3.9.9",
 		"imapflow": "^1.0.191",
