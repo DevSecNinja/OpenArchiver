@@ -322,8 +322,8 @@ importers:
         specifier: ^13.4.0
         version: 13.5.0
       pdf2json:
-        specifier: ^3.1.6
-        version: 3.1.6
+        specifier: ^3.2.2
+        version: 3.2.2
       pg:
         specifier: ^8.16.3
         version: 8.16.3
@@ -3813,8 +3813,8 @@ packages:
   path-to-regexp@8.4.2:
     resolution: {integrity: sha512-qRcuIdP69NPm4qbACK+aDogI5CBDMi1jKe0ry5rSQJz8JVLsC7jV8XpiJjGRLLol3N+R5ihGYcrPLTno6pAdBA==}
 
-  pdf2json@3.1.6:
-    resolution: {integrity: sha512-Nkwo9qeCvqVH0ZgYRUfPyj6o4o7StvNIxMFECeiz4y0uMOVyqc5Y9hjsdFVxdYCeiUjjXLQXA8KIz0iJL3HM0w==}
+  pdf2json@3.2.2:
+    resolution: {integrity: sha512-DgtH8GId1/+oj8n9yYEmhTq1QkxOZZzqHJhHEa1bmtV3t3/u2YsE3LSvRUNpVRWVXRcCdn+3Tu6+mD2YXKL7lA==}
     engines: {node: '>=20.18.0'}
     hasBin: true
 
@@ -8011,7 +8011,7 @@ snapshots:
 
   path-to-regexp@8.4.2: {}
 
-  pdf2json@3.1.6: {}
+  pdf2json@3.2.2: {}
 
   peberminta@0.10.0: {}
 
