@@ -80,7 +80,7 @@
 		"@types/cookie-parser": "^1.4.10",
 		"@types/cors": "^2.8.19",
 		"@types/express": "^5.0.3",
-		"@types/mailparser": "^3.4.6",
+		"@types/mailparser": "^3.9.0",
 		"@types/microsoft-graph": "^2.40.1",
 		"@types/multer": "^2.0.0",
 		"@types/node": "^24.0.12",
