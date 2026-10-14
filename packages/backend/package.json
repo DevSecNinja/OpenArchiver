@@ -44,7 +44,7 @@
 		"deepmerge-ts": "^7.1.5",
 		"dotenv": "^17.2.0",
 		"drizzle-kit": "^0.31.4",
-		"drizzle-orm": "^0.44.2",
+		"drizzle-orm": "^0.45.4",
 		"express": "^5.2.1",
 		"express-rate-limit": "^8.7.1",
 		"express-validator": "^7.3.2",
