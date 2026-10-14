@@ -61,7 +61,7 @@
 		"meilisearch": "^0.51.0",
 		"multer": "^2.4.0",
 		"nodemailer": "^8.0.2",
-		"otplib": "^13.4.0",
+		"otplib": "^13.5.0",
 		"pdf2json": "^3.1.6",
 		"pg": "^8.16.3",
 		"pino": "^9.7.0",
