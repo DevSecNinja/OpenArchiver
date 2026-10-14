@@ -371,8 +371,8 @@ importers:
         specifier: ^5.0.3
         version: 5.0.3
       '@types/mailparser':
-        specifier: ^3.4.6
-        version: 3.4.6
+        specifier: ^3.9.0
+        version: 3.9.0
       '@types/microsoft-graph':
         specifier: ^2.40.1
         version: 2.40.1
@@ -1950,8 +1950,8 @@ packages:
   '@types/linkify-it@5.0.0':
     resolution: {integrity: sha512-sVDA58zAw4eWAffKOaQH5/5j3XeayukzDk+ewSsnv3p4yJEZHCCzMDiZM8e0OUrRvmpGZ85jf4yDHkHsgBNr9Q==}
 
-  '@types/mailparser@3.4.6':
-    resolution: {integrity: sha512-wVV3cnIKzxTffaPH8iRnddX1zahbYB1ZEoAxyhoBo3TBCBuK6nZ8M8JYO/RhsCuuBVOw/DEN/t/ENbruwlxn6Q==}
+  '@types/mailparser@3.9.0':
+    resolution: {integrity: sha512-YnhrRiRVDiEAphFvd72hKa1n8y2b9Q3rgSQiONZQyhQz67h5g4MZHNApET3XWXVEFdInWtHqDHKEwnyjxU3QVw==}
 
   '@types/markdown-it@14.1.2':
     resolution: {integrity: sha512-promo4eFwuiW+TfGxhi+0x3czqTYJkG8qB17ZUJiVF10Xm7NLVRSLUsfRTU/6h1e24VvRnXCx+hG7li58lkzog==}
@@ -6113,7 +6113,7 @@ snapshots:
 
   '@types/linkify-it@5.0.0': {}
 
-  '@types/mailparser@3.4.6':
+  '@types/mailparser@3.9.0':
     dependencies:
       '@types/node': 24.0.13
       iconv-lite: 0.6.3
