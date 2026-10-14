@@ -55,7 +55,7 @@
 		"i18next-http-middleware": "^3.9.9",
 		"imapflow": "^1.0.191",
 		"ioredis": "^5.10.1",
-		"jose": "^6.0.11",
+		"jose": "^6.2.12",
 		"mailparser": "^3.9.36",
 		"mammoth": "^1.9.1",
 		"meilisearch": "^0.51.0",
