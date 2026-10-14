@@ -410,8 +410,8 @@ importers:
   packages/frontend:
     dependencies:
       '@iconify/svelte':
-        specifier: ^5.0.1
-        version: 5.0.1(svelte@5.57.2)
+        specifier: ^5.2.2
+        version: 5.2.2(svelte@5.57.2)
       '@open-archiver/types':
         specifier: workspace:*
         version: link:../types
@@ -1230,10 +1230,10 @@ packages:
   '@iconify-json/simple-icons@1.2.44':
     resolution: {integrity: sha512-CdWgSPygwDlDbKtDWjvi3NtUefnkoepXv90n3dQxJerqzD9kI+nEJOiWUBM+eOyMYQKtxBpLWFBrgeotF0IZKw==}
 
-  '@iconify/svelte@5.0.1':
-    resolution: {integrity: sha512-nR1ApafyeRDcsx6ytd+0mzaY0ASYfG5YBW9dN8rUWxwi792/HX401qAZEkXSjT0iHm2Dgua+PwXDs/3ttJhkqQ==}
+  '@iconify/svelte@5.2.2':
+    resolution: {integrity: sha512-XMXxD3nzH7yB68C3K4sNwzrJ1TBscODR0ZqCeNf0KGuEMCTSuCo0jHNDZ0o0iRXTylO41NSz/DWam/4atLG1yw==}
     peerDependencies:
-      svelte: '>4.0.0'
+      svelte: '>5.0.0'
 
   '@iconify/types@2.0.0':
     resolution: {integrity: sha512-+wluvCrRhXrhyOmRDJ3q8mux9JkKy5SJ/v8ol2tu4FVjyYvtEzkc/3pK15ET6RKg4b4w4BmTk1+gsCUhf21Ykg==}
@@ -5481,7 +5481,7 @@ snapshots:
     dependencies:
       '@iconify/types': 2.0.0
 
-  '@iconify/svelte@5.0.1(svelte@5.57.2)':
+  '@iconify/svelte@5.2.2(svelte@5.57.2)':
     dependencies:
       '@iconify/types': 2.0.0
       svelte: 5.57.2

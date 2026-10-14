@@ -15,7 +15,7 @@
 		"test:production": "node --test tests/production.test.mjs"
 	},
 	"dependencies": {
-		"@iconify/svelte": "^5.0.1",
+		"@iconify/svelte": "^5.2.2",
 		"@open-archiver/types": "workspace:*",
 		"@sveltejs/kit": "^2.70.3",
 		"clsx": "^2.1.1",
