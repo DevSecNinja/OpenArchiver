@@ -72,7 +72,7 @@
 		"reflect-metadata": "^0.2.2",
 		"xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
 		"yauzl": "^3.4.0",
-		"zod": "^4.1.5"
+		"zod": "^4.6.7"
 	},
 	"devDependencies": {
 		"@types/archiver": "^6.0.3",
