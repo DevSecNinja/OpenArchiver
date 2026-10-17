@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
     open-archiver:
-        image: logiclabshq/open-archiver:latest
+        image: logiclabshq/open-archiver:latest@sha256:3c240bf852d604b73a5229c0a22e2e69987e8e9cfe7241710598ca6187c08b83
         container_name: open-archiver
         restart: unless-stopped
         ports:
@@ -19,7 +19,7 @@ services:
             - open-archiver-net
 
     postgres:
-        image: postgres:17-alpine
+        image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
         container_name: postgres
         restart: unless-stopped
         environment:
@@ -32,7 +32,7 @@ services:
             - open-archiver-net
 
     valkey:
-        image: valkey/valkey:8-alpine
+        image: valkey/valkey:8-alpine@sha256:081c2f5cb575efc901aa80ff9cdbd1ec6a301682fd35e1ebb4b0990a4a4a8507
         container_name: valkey
         restart: unless-stopped
         # Defaulted like POSTGRES_PASSWORD below. Unset, this expanded to a bare `--requirepass`
@@ -46,7 +46,7 @@ services:
             - open-archiver-net
 
     meilisearch:
-        image: getmeili/meilisearch:v1.38
+        image: getmeili/meilisearch:v1.38@sha256:448a5b1b3e9303fabf39b84a2672f184295f665b1cb8eaffb11c738273430e5e
         container_name: meilisearch
         restart: unless-stopped
         environment:
@@ -58,7 +58,7 @@ services:
             - open-archiver-net
 
     tika:
-        image: apache/tika:3.2.2.0-full
+        image: apache/tika:3.2.2.0-full@sha256:ffab324253edc54706e8882dd28190b1e6559c344b5315ae8a74b9efda9e7291
         container_name: tika
         restart: always
         networks:
