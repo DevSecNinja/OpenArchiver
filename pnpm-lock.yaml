@@ -434,8 +434,8 @@ importers:
         specifier: ^6.0.1
         version: 6.0.11
       lucide-svelte:
-        specifier: ^0.525.0
-        version: 0.525.0(svelte@5.57.2)
+        specifier: ^1.0.1
+        version: 1.0.1(svelte@5.57.2)
       postal-mime:
         specifier: ^2.4.4
         version: 2.4.4
@@ -462,8 +462,8 @@ importers:
         specifier: ^3.8.2
         version: 3.8.2
       '@lucide/svelte':
-        specifier: ^0.544.0
-        version: 0.544.0(svelte@5.57.2)
+        specifier: ^1.57.0
+        version: 1.58.0(svelte@5.57.2)
       '@sveltejs/adapter-auto':
         specifier: ^6.0.0
         version: 6.0.1(@sveltejs/kit@2.70.3(@sveltejs/vite-plugin-svelte@5.1.1(supports-color@8.1.1)(svelte@5.57.2)(vite@6.4.4(@types/node@24.0.13)(jiti@2.4.2)(lightningcss@1.30.1)))(svelte@5.57.2)(typescript@5.8.3)(vite@6.4.4(@types/node@24.0.13)(jiti@2.4.2)(lightningcss@1.30.1)))
@@ -1292,8 +1292,8 @@ packages:
   '@layerstack/utils@2.0.0-next.12':
     resolution: {integrity: sha512-fhGZUlSr3N+D44BYm37WKMGSEFyZBW+dwIqtGU8Cl54mR4TLQ/UwyGhdpgIHyH/x/8q1abE0fP0Dn6ZsrDE3BA==}
 
-  '@lucide/svelte@0.544.0':
-    resolution: {integrity: sha512-9f9O6uxng2pLB01sxNySHduJN3HTl5p0HDu4H26VR51vhZfiMzyOMe9Mhof3XAk4l813eTtl+/DYRvGyoRR+yw==}
+  '@lucide/svelte@1.58.0':
+    resolution: {integrity: sha512-yUKVOUokJews09DTEf23We9/0Lju+XR+1Pcr6rYZBilpf4Uf6T3XRmalUgOsQW0drFfCI53WlIzgokkq2EqwYg==}
     peerDependencies:
       svelte: ^5
 
@@ -3511,8 +3511,8 @@ packages:
   lru-cache@10.4.3:
     resolution: {integrity: sha512-JNAzZcXrCt42VGLuYz0zfAzDfAvJWW6AfYlDBQyDV5DClI2m5sAmK+OIO7s59XfsRsWHp02jAJrRadPRGTt6SQ==}
 
-  lucide-svelte@0.525.0:
-    resolution: {integrity: sha512-kfuN6JcCqTfCz2B76aXnyGLAzEBRSYw5GaUspM5RNHQZS5aI5yaKu06fbaofOk8cDvUtY0AUm/zAix7aUX6Q3A==}
+  lucide-svelte@1.0.1:
+    resolution: {integrity: sha512-WvzZgk0pqzgda+AErLvgWxHkfg/+GgUwqKMRHvzt0IqyMdmyEDzDCk3Z+Wo/3y753oIgx8u9Q4eUbWkghFa8Jg==}
     deprecated: Package deprecated. Please use @lucide/svelte instead.
     peerDependencies:
       svelte: ^3 || ^4 || ^5.0.0-next.42
@@ -5564,7 +5564,7 @@ snapshots:
       d3-time-format: 4.1.0
       lodash-es: 4.17.21
 
-  '@lucide/svelte@0.544.0(svelte@5.57.2)':
+  '@lucide/svelte@1.58.0(svelte@5.57.2)':
     dependencies:
       svelte: 5.57.2
 
@@ -7734,7 +7734,7 @@ snapshots:
 
   lru-cache@10.4.3: {}
 
-  lucide-svelte@0.525.0(svelte@5.57.2):
+  lucide-svelte@1.0.1(svelte@5.57.2):
     dependencies:
       svelte: 5.57.2
 
