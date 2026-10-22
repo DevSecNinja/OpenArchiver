@@ -48,7 +48,7 @@
 		"express": "^5.2.1",
 		"express-rate-limit": "^8.7.1",
 		"express-validator": "^7.3.2",
-		"google-auth-library": "^10.1.0",
+		"google-auth-library": "^11.3.1",
 		"googleapis": "^152.0.0",
 		"i18next": "^25.4.2",
 		"i18next-fs-backend": "^2.6.8",
