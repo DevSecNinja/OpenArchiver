@@ -195,8 +195,8 @@ importers:
         specifier: ^1.6.4
         version: 1.6.4(@algolia/client-search@5.34.1)(@types/node@24.0.13)(axios@1.20.0(debug@4.4.3(supports-color@8.1.1))(supports-color@8.1.1))(lightningcss@1.30.1)(postcss@8.5.6)(qrcode@1.5.4)(search-insights@2.17.3)(typescript@5.8.3)
       vitepress-openapi:
-        specifier: ^0.1.18
-        version: 0.1.18(vitepress@1.6.4(@algolia/client-search@5.34.1)(@types/node@24.0.13)(axios@1.20.0(debug@4.4.3(supports-color@8.1.1))(supports-color@8.1.1))(lightningcss@1.30.1)(postcss@8.5.6)(qrcode@1.5.4)(search-insights@2.17.3)(typescript@5.8.3))(vue@3.5.18(typescript@5.8.3))
+        specifier: ^0.2.5
+        version: 0.2.5(vitepress@1.6.4(@algolia/client-search@5.34.1)(@types/node@24.0.13)(axios@1.20.0(debug@4.4.3(supports-color@8.1.1))(supports-color@8.1.1))(lightningcss@1.30.1)(postcss@8.5.6)(qrcode@1.5.4)(search-insights@2.17.3)(typescript@5.8.3))(vue@3.5.18(typescript@5.8.3))
 
   apps/open-archiver:
     dependencies:
@@ -1209,23 +1209,25 @@ packages:
   '@floating-ui/core@1.7.2':
     resolution: {integrity: sha512-wNB5ooIKHQc+Kui96jE/n69rHFWAVoxn5CAzL1Xdd8FG03cgY3MLO+GF9U3W737fYDSgPWA6MReKhBQBop6Pcw==}
 
-  '@floating-ui/core@1.7.5':
-    resolution: {integrity: sha512-1Ih4WTWyw0+lKyFMcBHGbb5U5FtuHJuujoyyr5zTaWS5EYMeT6Jb2AuDeftsCsEuchO+mM2ij5+q9crhydzLhQ==}
+  '@floating-ui/core@1.8.0':
+    resolution: {integrity: sha512-0CIZ5itps/8x7BG8dEIhs53BvCUH2PCoogtakwRTut+Arm58sJooJ0AuZhLw2HJYIR5cMLNPBSS728sPho2khQ==}
 
   '@floating-ui/dom@1.7.2':
     resolution: {integrity: sha512-7cfaOQuCS27HD7DX+6ib2OrnW+b4ZBwDNnCcT0uTyidcmyWb03FnQqJybDBoCnpdxwBSfA94UAYlRCt7mV+TbA==}
 
-  '@floating-ui/dom@1.7.6':
-    resolution: {integrity: sha512-9gZSAI5XM36880PPMm//9dfiEngYoC6Am2izES1FF406YFsjvyBMmeJ2g4SAju3xWwtuynNRFL2s9hgxpLI5SQ==}
+  '@floating-ui/dom@1.8.0':
+    resolution: {integrity: sha512-yXSrzeHZBTZadLOlfyhCkJHNeLJnHRnRInwdZ40L7ZiaAtrBwoYlsDrX3v5zB1Utk7CLfzcOVnVVWoXEky7Ceg==}
 
   '@floating-ui/utils@0.2.10':
     resolution: {integrity: sha512-aGTxbpbg8/b5JfU1HXSrbH3wXZuLPJcNEcZQFMxLs3oSzgtVu6nFPkbbGGUvBcUjKV2YyB9Wxxabo+HEH9tcRQ==}
 
-  '@floating-ui/utils@0.2.11':
-    resolution: {integrity: sha512-RiB/yIh78pcIxl6lLMG0CgBXAZ2Y0eVHqMPYugu+9U0AeT6YBeiJpf7lbdJNIugFP5SIjwNRgo4DhR1Qxi26Gg==}
+  '@floating-ui/utils@0.2.12':
+    resolution: {integrity: sha512-HpCo8tmWzLVad5s2d19EhAz5zqrrQ6s69qd6moPMQvkOuSwDT1YgRfWSVuc4ennqrgv3OHppiOGMQ7oC13yIww==}
 
-  '@floating-ui/vue@1.1.11':
-    resolution: {integrity: sha512-HzHKCNVxnGS35r9fCHBc3+uCnjw9IWIlCPL683cGgM9Kgj2BiAl8x1mS7vtvP6F9S/e/q4O6MApwSHj8hNLGfw==}
+  '@floating-ui/vue@2.0.1':
+    resolution: {integrity: sha512-043dyEKD9TDSfz080YH2vobubgg+NIo/9Fw4RAl7sEMpD8Am1DNrrSTl/GpMBjyGHoD/FbJY2QLawY+HSQsEIA==}
+    peerDependencies:
+      vue: '>=3.3.0'
 
   '@iconify-json/simple-icons@1.2.44':
     resolution: {integrity: sha512-CdWgSPygwDlDbKtDWjvi3NtUefnkoepXv90n3dQxJerqzD9kI+nEJOiWUBM+eOyMYQKtxBpLWFBrgeotF0IZKw==}
@@ -1296,6 +1298,11 @@ packages:
     resolution: {integrity: sha512-9f9O6uxng2pLB01sxNySHduJN3HTl5p0HDu4H26VR51vhZfiMzyOMe9Mhof3XAk4l813eTtl+/DYRvGyoRR+yw==}
     peerDependencies:
       svelte: ^5
+
+  '@lucide/vue@1.61.0':
+    resolution: {integrity: sha512-XYclbwUQ6Mvf0UskBG9gJH91BdF3VK4Tt6Pv8PSntwPwNnf357PCQnma4TrzOEdwD49UYCtsTafpfytRIxm1cQ==}
+    peerDependencies:
+      vue: '>=3.0.1'
 
   '@microsoft/microsoft-graph-client@3.0.7':
     resolution: {integrity: sha512-/AazAV/F+HK4LIywF9C+NYHcJo038zEnWkteilcxC1FM/uK/4NVGDKGrxx7nNq1ybspAroRKT4I1FHfxQzxkUw==}
@@ -2087,6 +2094,11 @@ packages:
     peerDependencies:
       vue: ^3.5.0
 
+  '@vueuse/core@14.4.0':
+    resolution: {integrity: sha512-X4WHz1HlCzCBoYXesUkifzzWBAcZgXG8Fi5iNPQg/epdzOB3gu8Fawj3hvuwYR1nGcXGnvxwYYcUC/71++svtQ==}
+    peerDependencies:
+      vue: ^3.5.0
+
   '@vueuse/integrations@12.8.2':
     resolution: {integrity: sha512-fbGYivgK5uBTRt7p5F3zy6VrETlV9RtZjBqd1/HxGdjdckBgBM4ugP8LHpjolqTj14TXTxSK1ZfgPbHYyGuH7g==}
     peerDependencies:
@@ -2134,11 +2146,19 @@ packages:
   '@vueuse/metadata@14.2.1':
     resolution: {integrity: sha512-1ButlVtj5Sb/HDtIy1HFr1VqCP4G6Ypqt5MAo0lCgjokrk2mvQKsK2uuy0vqu/Ks+sHfuHo0B9Y9jn9xKdjZsw==}
 
+  '@vueuse/metadata@14.4.0':
+    resolution: {integrity: sha512-swx/255R6JyHZFJhx845iz5CRWDZdCfvkZOpACWc5+c5WHcG24mv8gUT1WIdFQaHt6dq79rvILd9QnCWiyVm9g==}
+
   '@vueuse/shared@12.8.2':
     resolution: {integrity: sha512-dznP38YzxZoNloI0qpEfpkms8knDtaoQ6Y/sfS0L7Yki4zh40LFHEhur0odJC6xTHG5dxWVPiUWBXn+wCG2s5w==}
 
   '@vueuse/shared@14.2.1':
     resolution: {integrity: sha512-shTJncjV9JTI4oVNyF1FQonetYAiTBd+Qj7cY89SWbXSkx7gyhrgtEdF2ZAVWS1S3SHlaROO6F2IesJxQEkZBw==}
+    peerDependencies:
+      vue: ^3.5.0
+
+  '@vueuse/shared@14.4.0':
+    resolution: {integrity: sha512-JRgY90Sz8DDtPMsaDflvPMp9xYk69JZAmbuDvAquUVXKr2gEjqtzGNTTthLfckH0BzBqvnu31gb4a8TGLRe79g==}
     peerDependencies:
       vue: ^3.5.0
 
@@ -2650,8 +2670,8 @@ packages:
     resolution: {integrity: sha512-3sUqbMEc77XqpdNO7FRyRog+eW3ph+GYCbj+rK+uYyRMuwsVy0rMiVtPn+QJlKFvWP/1PYpapqYn0Me2knFn+A==}
     engines: {node: '>=0.10.0'}
 
-  defu@6.1.4:
-    resolution: {integrity: sha512-mEQCMmwJu317oSz8CwdIOdwf3xMif1ttiM8LTufzc3g6kR+9Pe236twL8j3IYT1F7GfRgGcW6MWxzZjLIkuHIg==}
+  defu@6.1.7:
+    resolution: {integrity: sha512-7z22QmUWiQ/2d0KkdYmANbRUVABpZ9SNYyH5vx6PZ+nE5bcC0l7uFvEfHlyld/HcGBFTL536ClDt3DEcSlEJAQ==}
 
   delaunator@5.0.1:
     resolution: {integrity: sha512-8nvh+XBe96aCESrGOqMp/84b13H9cdKbG5P2ejQCh4d4sK9RL4371qou9drQjMhvnPmhWl5hnmqbEE0fXr9Xnw==}
@@ -3517,12 +3537,6 @@ packages:
     peerDependencies:
       svelte: ^3 || ^4 || ^5.0.0-next.42
 
-  lucide-vue-next@0.577.0:
-    resolution: {integrity: sha512-py05bAfv9SHVJqscbiOnjcnLlEmOffA58a+7XhZuFxrs6txe1E8VoR1ngWGTYO+9aVKABAz8l3ee3PqiQN9QPA==}
-    deprecated: Package deprecated. Please use @lucide/vue instead.
-    peerDependencies:
-      vue: '>=3.0.1'
-
   luxon@3.7.1:
     resolution: {integrity: sha512-RkRWjA926cTvz5rAb1BqyWkKbbjzCGchDUIKMCUvNi17j6f6j8uHGDV82Aqcqtzd+icoYpELmG3ksgGiFNNcNg==}
     engines: {node: '>=12'}
@@ -4094,8 +4108,8 @@ packages:
   regex@6.0.1:
     resolution: {integrity: sha512-uorlqlzAKjKQZ5P+kTJr3eeJGSVroLKoHmquUj4zHWuR+hEyNqlXsSKlYYF5F4NI6nl7tWCs0apKJ0lmfsXAPA==}
 
-  reka-ui@2.9.2:
-    resolution: {integrity: sha512-/t4e6y1hcG+uDuRfpg6tbMz3uUEvRzNco6NeYTufoJeUghy5Iosxos5YL/p+ieAsid84sdMX9OrgDqpEuCJhBw==}
+  reka-ui@2.11.0:
+    resolution: {integrity: sha512-ilkpm4bIAol4jwzm4tpm3WVcffyGOpqksNZL1k1qO9QmIwAA+q8jroxjkUGLEn/GddfdExFfvofWfQiKZszUeQ==}
     peerDependencies:
       vue: '>= 3.4.0'
 
@@ -4704,8 +4718,8 @@ packages:
       vite:
         optional: true
 
-  vitepress-openapi@0.1.18:
-    resolution: {integrity: sha512-2vm3vWywPJ3xThvPxuUaUFIfHz3lCLXT3bV6vh71wny+XB3IkJUfyJxPDDEjdCHVPIoNSVyPDR74iVszacF24w==}
+  vitepress-openapi@0.2.5:
+    resolution: {integrity: sha512-524n7Ia+Gp4WJYm+PLdpbghAE5O28tYiOw2mw6wGI6KK7jCh4/BgzqpZnofIfCF2zP45B4fzI/lIad/X3CcSNw==}
     engines: {node: ^20.19.0 || ^22.13.0 || >=24.0.0}
     peerDependencies:
       vitepress: '>=1.0.0'
@@ -4721,17 +4735,6 @@ packages:
       markdown-it-mathjax3:
         optional: true
       postcss:
-        optional: true
-
-  vue-demi@0.14.10:
-    resolution: {integrity: sha512-nMZBOwuzabUO0nLgIcc6rycZEebF6eeUfaiQx9+WSk8e29IbLvPU9feI6tqW4kTo3hvoYAJkMh8n8D0fuISphg==}
-    engines: {node: '>=12'}
-    hasBin: true
-    peerDependencies:
-      '@vue/composition-api': ^1.0.0-rc.1
-      vue: ^3.0.0-0 || ^2.6.0
-    peerDependenciesMeta:
-      '@vue/composition-api':
         optional: true
 
   vue@3.5.18:
@@ -5450,32 +5453,29 @@ snapshots:
     dependencies:
       '@floating-ui/utils': 0.2.10
 
-  '@floating-ui/core@1.7.5':
+  '@floating-ui/core@1.8.0':
     dependencies:
-      '@floating-ui/utils': 0.2.11
+      '@floating-ui/utils': 0.2.12
 
   '@floating-ui/dom@1.7.2':
     dependencies:
       '@floating-ui/core': 1.7.2
       '@floating-ui/utils': 0.2.10
 
-  '@floating-ui/dom@1.7.6':
+  '@floating-ui/dom@1.8.0':
     dependencies:
-      '@floating-ui/core': 1.7.5
-      '@floating-ui/utils': 0.2.11
+      '@floating-ui/core': 1.8.0
+      '@floating-ui/utils': 0.2.12
 
   '@floating-ui/utils@0.2.10': {}
 
-  '@floating-ui/utils@0.2.11': {}
+  '@floating-ui/utils@0.2.12': {}
 
-  '@floating-ui/vue@1.1.11(vue@3.5.18(typescript@5.8.3))':
+  '@floating-ui/vue@2.0.1(vue@3.5.18(typescript@5.8.3))':
     dependencies:
-      '@floating-ui/dom': 1.7.6
-      '@floating-ui/utils': 0.2.11
-      vue-demi: 0.14.10(vue@3.5.18(typescript@5.8.3))
-    transitivePeerDependencies:
-      - '@vue/composition-api'
-      - vue
+      '@floating-ui/dom': 1.8.0
+      '@floating-ui/utils': 0.2.12
+      vue: 3.5.18(typescript@5.8.3)
 
   '@iconify-json/simple-icons@1.2.44':
     dependencies:
@@ -5567,6 +5567,10 @@ snapshots:
   '@lucide/svelte@0.544.0(svelte@5.57.2)':
     dependencies:
       svelte: 5.57.2
+
+  '@lucide/vue@1.61.0(vue@3.5.18(typescript@5.8.3))':
+    dependencies:
+      vue: 3.5.18(typescript@5.8.3)
 
   '@microsoft/microsoft-graph-client@3.0.7(buffer@6.0.3)(stream-browserify@3.0.0)':
     dependencies:
@@ -6297,6 +6301,13 @@ snapshots:
       '@vueuse/shared': 14.2.1(vue@3.5.18(typescript@5.8.3))
       vue: 3.5.18(typescript@5.8.3)
 
+  '@vueuse/core@14.4.0(vue@3.5.18(typescript@5.8.3))':
+    dependencies:
+      '@types/web-bluetooth': 0.0.21
+      '@vueuse/metadata': 14.4.0
+      '@vueuse/shared': 14.4.0(vue@3.5.18(typescript@5.8.3))
+      vue: 3.5.18(typescript@5.8.3)
+
   '@vueuse/integrations@12.8.2(axios@1.20.0(debug@4.4.3(supports-color@8.1.1))(supports-color@8.1.1))(focus-trap@7.6.5)(qrcode@1.5.4)(typescript@5.8.3)':
     dependencies:
       '@vueuse/core': 12.8.2(typescript@5.8.3)
@@ -6313,6 +6324,8 @@ snapshots:
 
   '@vueuse/metadata@14.2.1': {}
 
+  '@vueuse/metadata@14.4.0': {}
+
   '@vueuse/shared@12.8.2(typescript@5.8.3)':
     dependencies:
       vue: 3.5.18(typescript@5.8.3)
@@ -6320,6 +6333,10 @@ snapshots:
       - typescript
 
   '@vueuse/shared@14.2.1(vue@3.5.18(typescript@5.8.3))':
+    dependencies:
+      vue: 3.5.18(typescript@5.8.3)
+
+  '@vueuse/shared@14.4.0(vue@3.5.18(typescript@5.8.3))':
     dependencies:
       vue: 3.5.18(typescript@5.8.3)
 
@@ -6828,7 +6845,7 @@ snapshots:
 
   deepmerge@4.3.1: {}
 
-  defu@6.1.4: {}
+  defu@6.1.7: {}
 
   delaunator@5.0.1:
     dependencies:
@@ -7738,10 +7755,6 @@ snapshots:
     dependencies:
       svelte: 5.57.2
 
-  lucide-vue-next@0.577.0(vue@3.5.18(typescript@5.8.3)):
-    dependencies:
-      vue: 3.5.18(typescript@5.8.3)
-
   luxon@3.7.1: {}
 
   lz-string@1.5.0: {}
@@ -8241,21 +8254,18 @@ snapshots:
     dependencies:
       regex-utilities: 2.3.0
 
-  reka-ui@2.9.2(vue@3.5.18(typescript@5.8.3)):
+  reka-ui@2.11.0(vue@3.5.18(typescript@5.8.3)):
     dependencies:
-      '@floating-ui/dom': 1.7.2
-      '@floating-ui/vue': 1.1.11(vue@3.5.18(typescript@5.8.3))
+      '@floating-ui/vue': 2.0.1(vue@3.5.18(typescript@5.8.3))
       '@internationalized/date': 3.8.2
       '@internationalized/number': 3.6.5
       '@tanstack/vue-virtual': 3.13.23(vue@3.5.18(typescript@5.8.3))
       '@vueuse/core': 14.2.1(vue@3.5.18(typescript@5.8.3))
       '@vueuse/shared': 14.2.1(vue@3.5.18(typescript@5.8.3))
       aria-hidden: 1.2.6
-      defu: 6.1.4
+      defu: 6.1.7
       ohash: 2.0.11
       vue: 3.5.18(typescript@5.8.3)
-    transitivePeerDependencies:
-      - '@vue/composition-api'
 
   require-directory@2.1.1: {}
 
@@ -8911,18 +8921,16 @@ snapshots:
     optionalDependencies:
       vite: 6.4.4(@types/node@24.0.13)(jiti@2.4.2)(lightningcss@1.30.1)
 
-  vitepress-openapi@0.1.18(vitepress@1.6.4(@algolia/client-search@5.34.1)(@types/node@24.0.13)(axios@1.20.0(debug@4.4.3(supports-color@8.1.1))(supports-color@8.1.1))(lightningcss@1.30.1)(postcss@8.5.6)(qrcode@1.5.4)(search-insights@2.17.3)(typescript@5.8.3))(vue@3.5.18(typescript@5.8.3)):
+  vitepress-openapi@0.2.5(vitepress@1.6.4(@algolia/client-search@5.34.1)(@types/node@24.0.13)(axios@1.20.0(debug@4.4.3(supports-color@8.1.1))(supports-color@8.1.1))(lightningcss@1.30.1)(postcss@8.5.6)(qrcode@1.5.4)(search-insights@2.17.3)(typescript@5.8.3))(vue@3.5.18(typescript@5.8.3)):
     dependencies:
-      '@vueuse/core': 14.2.1(vue@3.5.18(typescript@5.8.3))
+      '@lucide/vue': 1.61.0(vue@3.5.18(typescript@5.8.3))
+      '@vueuse/core': 14.4.0(vue@3.5.18(typescript@5.8.3))
       class-variance-authority: 0.7.1
       clsx: 2.1.1
-      lucide-vue-next: 0.577.0(vue@3.5.18(typescript@5.8.3))
       markdown-it-link-attributes: 4.0.1
-      reka-ui: 2.9.2(vue@3.5.18(typescript@5.8.3))
+      reka-ui: 2.11.0(vue@3.5.18(typescript@5.8.3))
       vitepress: 1.6.4(@algolia/client-search@5.34.1)(@types/node@24.0.13)(axios@1.20.0(debug@4.4.3(supports-color@8.1.1))(supports-color@8.1.1))(lightningcss@1.30.1)(postcss@8.5.6)(qrcode@1.5.4)(search-insights@2.17.3)(typescript@5.8.3)
       vue: 3.5.18(typescript@5.8.3)
-    transitivePeerDependencies:
-      - '@vue/composition-api'
 
   vitepress@1.6.4(@algolia/client-search@5.34.1)(@types/node@24.0.13)(axios@1.20.0(debug@4.4.3(supports-color@8.1.1))(supports-color@8.1.1))(lightningcss@1.30.1)(postcss@8.5.6)(qrcode@1.5.4)(search-insights@2.17.3)(typescript@5.8.3):
     dependencies:
@@ -8972,10 +8980,6 @@ snapshots:
       - terser
       - typescript
       - universal-cookie
-
-  vue-demi@0.14.10(vue@3.5.18(typescript@5.8.3)):
-    dependencies:
-      vue: 3.5.18(typescript@5.8.3)
 
   vue@3.5.18(typescript@5.8.3):
     dependencies:
