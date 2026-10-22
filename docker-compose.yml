@@ -58,7 +58,7 @@ services:
             - open-archiver-net
 
     tika:
-        image: apache/tika:3.2.2.0-full
+        image: apache/tika:3.3.1.0-full@sha256:d8e6ed96260ad89307a93195a1b856102987a818ac648502f8efbaf313d32470
         container_name: tika
         restart: always
         networks:
