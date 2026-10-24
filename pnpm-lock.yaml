@@ -223,8 +223,8 @@ importers:
         specifier: ^3.1147.0
         version: 3.1147.0(@aws-sdk/client-s3@3.1147.0)
       '@azure/msal-node':
-        specifier: ^3.6.3
-        version: 3.6.3
+        specifier: ^7.1.0
+        version: 7.1.1
       '@casl/ability':
         specifier: ^6.8.1
         version: 6.8.1
@@ -700,13 +700,13 @@ packages:
     resolution: {integrity: sha512-sl4Bm6yiMNYrZKkqqDFWN0UfnWhlS8ivKxrYl+6t0gCLrqr8y3B2IqZZbFRkfaVVp7C/baApyh71P+LeE1A2sQ==}
     engines: {node: '>=18.0.0'}
 
-  '@azure/msal-common@15.8.1':
-    resolution: {integrity: sha512-ltIlFK5VxeJ5BurE25OsJIfcx1Q3H/IZg2LjV9d4vmH+5t4c1UCyRQ/HgKLgXuCZShs7qfc/TC95GYZfsUsJUQ==}
+  '@azure/msal-common@16.14.3':
+    resolution: {integrity: sha512-tz3GvMrR9V/plb2lDdW8qaO8CPpfZevdExBKjltzzbAtyhK0eB2UIvji1aU+gkyHj3fxQ2ie+LNHyMXdmo8wOg==}
     engines: {node: '>=0.8.0'}
 
-  '@azure/msal-node@3.6.3':
-    resolution: {integrity: sha512-95wjsKGyUcAd5tFmQBo5Ug/kOj+hFh/8FsXuxluEvdfbgg6xCimhSP9qnyq6+xIg78/jREkBD1/BSqd7NIDDYQ==}
-    engines: {node: '>=16'}
+  '@azure/msal-node@7.1.1':
+    resolution: {integrity: sha512-zHXTJB38XVrsNaXrPBCMqEUjeyQysFfgmKtUHRDsEKTRjNIPckJ/w6fE5wBXrmJXBim1D3C7O7LOag0msPTrgw==}
+    engines: {node: '>=20'}
 
   '@babel/helper-string-parser@7.27.1':
     resolution: {integrity: sha512-qMlSxKbpRlAridDExk92nSobyDdpPijUq2DW6oDnUqd0iOGxmQjyqhMIihI9+zv4LPyZdRje2cavWPbCbWm3eA==}
@@ -4596,10 +4596,6 @@ packages:
   uuid-parse@1.1.0:
     resolution: {integrity: sha512-OdmXxA8rDsQ7YpNVbKSJkNzTw2I+S5WsbMDnCtIWSQaosNAcWtFuI/YK1TjzUI6nbkgiqEyh8gWngfcv8Asd9A==}
 
-  uuid@8.3.2:
-    resolution: {integrity: sha512-+NYs2QeMWy+GWFOEm9xnn6HCDp0l7QBD7ml8zLUmJ+93Q5NF0NocErnwkTkXVFNiX3/fpC6afS8Dhb/gz7R7eg==}
-    hasBin: true
-
   uuid@9.0.1:
     resolution: {integrity: sha512-b+1eJOlsR9K8HJpow9Ok3fiWOWSIcIzXodvv0rQjVoOVNpWMpxf1wZNpt4y9h10odCNrqnYp1OBzRktckBe3sA==}
     hasBin: true
@@ -5158,13 +5154,12 @@ snapshots:
 
   '@aws/lambda-invoke-store@0.3.0': {}
 
-  '@azure/msal-common@15.8.1': {}
+  '@azure/msal-common@16.14.3': {}
 
-  '@azure/msal-node@3.6.3':
+  '@azure/msal-node@7.1.1':
     dependencies:
-      '@azure/msal-common': 15.8.1
+      '@azure/msal-common': 16.14.3
       jsonwebtoken: 9.0.2
-      uuid: 8.3.2
 
   '@babel/helper-string-parser@7.27.1': {}
 
@@ -8860,8 +8855,6 @@ snapshots:
   util-deprecate@1.0.2: {}
 
   uuid-parse@1.1.0: {}
-
-  uuid@8.3.2: {}
 
   uuid@9.0.1: {}
 
