@@ -9,7 +9,7 @@
 	},
 	"dependencies": {
 		"@open-archiver/backend": "workspace:*",
-		"dotenv": "^17.2.0"
+		"dotenv": "^18.0.8"
 	},
 	"devDependencies": {
 		"@types/dotenv": "^8.2.3",
