@@ -60,7 +60,7 @@
 		"mammoth": "^1.9.1",
 		"meilisearch": "^0.51.0",
 		"multer": "^2.4.0",
-		"nodemailer": "^8.0.2",
+		"nodemailer": "^10.1.7",
 		"otplib": "^13.4.0",
 		"pdf2json": "^3.1.6",
 		"pg": "^8.16.3",
