@@ -56,7 +56,7 @@
 		"imapflow": "^1.0.191",
 		"ioredis": "^5.10.1",
 		"jose": "^6.0.11",
-		"mailparser": "^3.9.36",
+		"mailparser": "^3.10.0",
 		"mammoth": "^1.9.1",
 		"meilisearch": "^0.51.0",
 		"multer": "^2.4.0",
