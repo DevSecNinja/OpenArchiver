@@ -301,8 +301,8 @@ importers:
         specifier: ^5.10.1
         version: 5.11.1(supports-color@8.1.1)
       jose:
-        specifier: ^6.0.11
-        version: 6.0.11
+        specifier: ^6.2.13
+        version: 6.2.13
       mailparser:
         specifier: ^3.9.36
         version: 3.9.36
@@ -431,8 +431,8 @@ importers:
         specifier: ^2.6.0
         version: 2.6.0
       jose:
-        specifier: ^6.0.1
-        version: 6.0.11
+        specifier: ^6.2.13
+        version: 6.2.13
       lucide-svelte:
         specifier: ^0.525.0
         version: 0.525.0(svelte@5.57.2)
@@ -519,8 +519,8 @@ importers:
   packages/types:
     dependencies:
       jose:
-        specifier: ^6.0.11
-        version: 6.0.11
+        specifier: ^6.2.13
+        version: 6.2.13
     devDependencies:
       '@types/node':
         specifier: ^24.0.13
@@ -3309,8 +3309,8 @@ packages:
     resolution: {integrity: sha512-rg9zJN+G4n2nfJl5MW3BMygZX56zKPNVEYYqq7adpmMh4Jn2QNEwhvQlFy6jPVdcod7txZtKHWnyZiA3a0zP7A==}
     hasBin: true
 
-  jose@6.0.11:
-    resolution: {integrity: sha512-QxG7EaliDARm1O1S8BGakqncGT9s25bKL1WSf6/oa17Tkqwi8D2ZNglqCF+DsYF88/rV66Q/Q2mFAy697E1DUg==}
+  jose@6.2.13:
+    resolution: {integrity: sha512-7TIg10ZE1x82YediN+lcrPNvGMKge9yFHQD+Qho/b8y2adfugU3AsvvHfxV0fzyFllT6l9xCjf4RWY9g/Z9PJQ==}
 
   joycon@3.1.1:
     resolution: {integrity: sha512-34wB/Y7MW7bzjKRjUKTa46I2Z7eV62Rkhva+KkopW7Qvv/OSWBqvkSY7vusOPrNuZcUG3tApvdVgNB8POj3SPw==}
@@ -7520,7 +7520,7 @@ snapshots:
 
   jiti@2.4.2: {}
 
-  jose@6.0.11: {}
+  jose@6.2.13: {}
 
   joycon@3.1.1: {}
 
