@@ -204,8 +204,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/backend
       dotenv:
-        specifier: ^17.2.0
-        version: 17.2.0
+        specifier: ^18.0.9
+        version: 18.0.9
     devDependencies:
       '@types/dotenv':
         specifier: ^8.2.3
@@ -262,8 +262,8 @@ importers:
         specifier: ^7.1.5
         version: 7.1.5
       dotenv:
-        specifier: ^17.2.0
-        version: 17.2.0
+        specifier: ^18.0.9
+        version: 18.0.9
       drizzle-kit:
         specifier: ^0.31.4
         version: 0.31.4(supports-color@8.1.1)
@@ -486,8 +486,8 @@ importers:
         specifier: ^2.12.0
         version: 2.12.0(@internationalized/date@3.8.2)(@sveltejs/kit@2.70.3(@sveltejs/vite-plugin-svelte@5.1.1(supports-color@8.1.1)(svelte@5.57.2)(vite@6.4.4(@types/node@24.0.13)(jiti@2.4.2)(lightningcss@1.30.1)))(svelte@5.57.2)(typescript@5.8.3)(vite@6.4.4(@types/node@24.0.13)(jiti@2.4.2)(lightningcss@1.30.1)))(svelte@5.57.2)
       dotenv:
-        specifier: ^17.2.0
-        version: 17.2.0
+        specifier: ^18.0.9
+        version: 18.0.9
       layerchart:
         specifier: 2.0.0-next.27
         version: 2.0.0-next.27(svelte@5.57.2)
@@ -2721,9 +2721,10 @@ packages:
     resolution: {integrity: sha512-uBq4egWHTcTt33a72vpSG0z3HnPuIl6NqYcTrKEg2azoEyl2hpW0zqlxysq2pK9HlDIHyHyakeYaYnSAwd8bow==}
     engines: {node: '>=12'}
 
-  dotenv@17.2.0:
-    resolution: {integrity: sha512-Q4sgBT60gzd0BB0lSyYD3xM4YxrXA9y4uBDof1JNYGzOXrQdQ6yX+7XIAqoFOGQFOTK1D3Hts5OllpxMDZFONQ==}
+  dotenv@18.0.9:
+    resolution: {integrity: sha512-3fVOW4cB02R066PUSwn8O4TJyz9NckQl7F81blIbaq9jKBm2tSmOKky7ZHIXzGvkVPXCSn6jkpziBPZdGFs8Tw==}
     engines: {node: '>=12'}
+    hasBin: true
 
   drizzle-kit@0.31.4:
     resolution: {integrity: sha512-tCPWVZWZqWVx2XUsVpJRnH9Mx0ClVOf5YUHerZ5so1OKSlqww4zy1R5ksEdGRcO3tM3zj0PYN6V48TbQCL1RfA==}
@@ -6084,7 +6085,7 @@ snapshots:
 
   '@types/dotenv@8.2.3':
     dependencies:
-      dotenv: 17.2.0
+      dotenv: 18.0.9
 
   '@types/estree@1.0.8': {}
 
@@ -6889,7 +6890,7 @@ snapshots:
 
   dotenv@16.6.1: {}
 
-  dotenv@17.2.0: {}
+  dotenv@18.0.9: {}
 
   drizzle-kit@0.31.4(supports-color@8.1.1):
     dependencies:
