@@ -21,7 +21,7 @@ jobs:
         timeout-minutes: 30
         services:
             postgres:
-                image: postgres:17-alpine
+                image: postgres:17-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b
                 env:
                     POSTGRES_USER: storage_test
                     POSTGRES_PASSWORD: storage_test
@@ -42,7 +42,7 @@ jobs:
             - name: Set up Node.js for the source build
               uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
               with:
-                  node-version: '22'
+                  node-version: '22.23.4'
                   package-manager-cache: false
 
             - name: Set up pnpm from packageManager
@@ -84,7 +84,7 @@ jobs:
             - name: Set up Node.js for Renovate
               uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
               with:
-                  node-version: '24'
+                  node-version: '24.22.1'
                   package-manager-cache: false
 
             - name: Validate Renovate configuration
